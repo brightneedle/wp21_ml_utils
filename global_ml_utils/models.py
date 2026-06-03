@@ -33,10 +33,12 @@ def load_model(path, custom_objects={}):
             "LocalMaxMask": LocalMaxMask,
             "TowerEtaPhiLayer": TowerEtaPhiLayer,
             "EtaPhiPadding": EtaPhiPadding,
-            "ImageToMomenta": ImageToMomenta,
             "NthLeadingPt": NthLeadingPt,
             "VectorSumPt": VectorSumPt,
             "CircularMaxPool": CircularMaxPool,
+            # converters
+            "ImageToVectors": ImageToVectors,
+            "VectorsToImage": VectorsToImage,
             # bijectors
             "RQSLayer": RQSLayer,
             "ConditionalRQSLayer": ConditionalRQSLayer,
@@ -207,7 +209,7 @@ def ConeJetAlgo(
     masked_cone_sums = tf.where(local_max_seed_mask, cone_sums, 0)
 
     # convert to 3-vectors
-    jet_vectors = ImageToMomenta(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
+    jet_vectors = ImageToVectors(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
 
     return Model(inputs=image, outputs=jet_vectors, name=layer_name)
 

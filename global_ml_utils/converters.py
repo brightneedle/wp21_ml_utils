@@ -5,8 +5,8 @@ import numpy as np
 from global_ml_utils.layers import TowerEtaPhiLayer
 
 
-class ImageToMomenta(layers.Layer):
-    def __init__(self, max_vectors: int, min_pt: float = 0, **kwargs):
+class ImageToVectors(layers.Layer):
+    def __init__(self, max_vectors: int = None, min_pt: float = 0, **kwargs):
         super().__init__(**kwargs)
         self.max_vectors = max_vectors
         self.min_pt = min_pt
@@ -23,17 +23,19 @@ class ImageToMomenta(layers.Layer):
         flat_eta = tf.reshape(eta, [B, E * P])
         flat_phi = tf.reshape(phi, [B, E * P])
 
-        seed_pt, idxs = tf.math.top_k(flat_pt, k=self.max_vectors, sorted=True)
+        seed_pt, idxs = tf.math.top_k(
+            flat_pt,
+            k=E * P if self.max_vectors is None else self.max_vectors,
+            sorted=True,
+        )
 
         seed_eta = tf.gather(flat_eta, idxs, axis=1, batch_dims=1)
         seed_phi = tf.gather(flat_phi, idxs, axis=1, batch_dims=1)
 
-        seed_mask = seed_pt > self.min_pt
-        seed_pt = tf.where(seed_mask, seed_pt, 0)
-        seed_eta = tf.where(seed_mask, seed_eta, 0)
-        seed_phi = tf.where(seed_mask, seed_phi, 0)
+        vectors = tf.stack([seed_pt, seed_eta, seed_phi], axis=-1)
+        seed_mask = seed_pt[..., None] > self.min_pt
 
-        return tf.stack([seed_pt, seed_eta, seed_phi], axis=-1)
+        return tf.where(seed_mask, vectors, 0)
 
     def get_config(self):
         return {
@@ -43,7 +45,7 @@ class ImageToMomenta(layers.Layer):
         }
 
 
-class VectorsToTowers(layers.Layer):
+class VectorsToImage(layers.Layer):
     def __init__(
         self,
         eta_edges: tf.Tensor = tf.linspace(-2.5, 2.5, 51),

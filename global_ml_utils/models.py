@@ -1,0 +1,326 @@
+import tensorflow as tf
+from tensorflow.keras import layers, Input, backend, Model, initializers
+from qkeras import quantized_bits, QActivation, QDense
+from qkeras.utils import load_qmodel
+
+from airt.keras.layers import MonoDense
+
+from global_ml_utils.utils import unpack
+from global_ml_utils.layers import *
+from global_ml_utils.losses import *
+from global_ml_utils.regularisers import *
+from global_ml_utils.quantisers import *
+from global_ml_utils.converters import *
+from global_ml_utils.bijectors import *
+from global_ml_utils.softkiller import *
+
+backend.set_image_data_format("channels_last")
+
+
+def load_model(path, custom_objects={}):
+    print("Loading saved model at", path)
+    return load_qmodel(
+        path,
+        custom_objects={
+            **custom_objects,
+            # monotonic dense layers
+            "MonoDense": MonoDense,
+            # custom layers
+            "SymmetricPooling": SymmetricPooling,
+            "QSymmetricDepthwiseConv2D": QSymmetricDepthwiseConv2D,
+            "SymmetricDepthwiseConv2D": SymmetricDepthwiseConv2D,
+            "SlidingConeSum": SlidingConeSum,
+            "LocalMaxMask": LocalMaxMask,
+            "TowerEtaPhiLayer": TowerEtaPhiLayer,
+            "EtaPhiPadding": EtaPhiPadding,
+            "ImageToMomenta": ImageToMomenta,
+            "NthLeadingPt": NthLeadingPt,
+            "VectorSumPt": VectorSumPt,
+            "CircularMaxPool": CircularMaxPool,
+            # bijectors
+            "RQSLayer": RQSLayer,
+            "ConditionalRQSLayer": ConditionalRQSLayer,
+            # losses
+            "SparsityLoss": SparsityLoss,
+            "CalibrationLoss": CalibrationLoss,
+            "ChamferLoss": ChamferLoss,
+            # quantisers
+            "TrainableQuantizer": TrainableQuantizer,
+            "QuadLinearQuantizer": QuadLinearQuantizer,
+            # regularisers
+            "PushMaxWeightToUnity": PushMaxWeightToUnity,
+            "SparsityPenalty": SparsityPenalty,
+            # softkiller
+            "SoftKiller": SoftKiller,
+            "SoftKillerWithAreaCorrection": SoftKillerWithAreaCorrection,
+        },
+    )
+
+
+def PileUpCNN(
+    input_shape: tuple[int],
+    size: int = 3,
+    depth_multiplier: int = 4,
+    hidden_layer_sizes: list[int] = [32, 32],
+    name: str = "pileup-cnn",
+    init_as_layer_sum: bool = True,
+    with_abseta: bool = True,
+    push_max_to_unity: bool = False,
+):
+    inputs = Input(shape=input_shape)
+
+    x = EtaPhiPadding(size // 2)(inputs)
+    x = SymmetricDepthwiseConv2D(
+        kernel_size=size,
+        input_channels=input_shape[-1],
+        depth_multiplier=depth_multiplier,
+    )(x)
+    x = layers.Activation("relu")(x)
+
+    if with_abseta:
+        eta, _ = TowerEtaPhiLayer()(inputs)
+        log_abseta = backend.log(backend.abs(eta) + 1e-3)
+        x = layers.Concatenate(axis=-1)([x, log_abseta])
+
+    for layer_size in hidden_layer_sizes:
+        x = layers.Dense(
+            layer_size,
+            activation="relu",
+        )(x)
+
+    w = layers.Dense(
+        input_shape[-1],
+        activation="hard_sigmoid",
+        kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
+        bias_initializer="ones" if init_as_layer_sum else "zeros",
+        activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
+    )(x)
+
+    outputs = layers.Multiply()([w, inputs])
+
+    model = Model(
+        inputs=inputs,
+        outputs=outputs,
+        name=name,
+    )
+
+    return model
+
+
+def PileUpQCNN(
+    input_shape: tuple[int],
+    size: int = 3,
+    depth_multiplier: int = 4,
+    hidden_layer_sizes: list[int] = [32, 32],
+    name: str = "pileup-cnn",
+    init_as_layer_sum: bool = False,
+    with_abseta: bool = True,
+    push_max_to_unity: bool = False,
+    bits: int = 10,
+):
+    def init_qrelu(precision: int, integer: int = None):
+        return QActivation(
+            f"quantized_relu({precision},{precision // 2 if integer is None else integer})"
+        )
+
+    def init_quantiser(precision: int, integer: int = None):
+        return quantized_bits(
+            bits=precision,
+            integer=precision // 2 if integer is None else integer,
+            alpha=1,
+        )
+
+    quantiser = init_quantiser(bits, 2)
+
+    inputs = Input(shape=input_shape)
+
+    x = EtaPhiPadding(size // 2)(inputs)
+    x = QSymmetricDepthwiseConv2D(
+        kernel_size=size,
+        input_channels=input_shape[-1],
+        depth_multiplier=depth_multiplier,
+        bias_quantizer=quantiser,
+        kernel_quantizer=quantiser,
+    )(x)
+    x = init_qrelu(bits)(x)
+
+    if with_abseta:
+        eta, _ = TowerEtaPhiLayer()(inputs)
+        log_abseta = backend.log(backend.abs(eta) + 1e-3)
+        x = layers.Concatenate(axis=-1)([x, log_abseta])
+
+    for layer_size in hidden_layer_sizes:
+        x = QDense(
+            layer_size,
+            kernel_quantizer=quantiser,
+            bias_quantizer=quantiser,
+        )(x)
+        x = init_qrelu(bits)(x)
+
+    weights = QDense(
+        input_shape[-1],
+        activation="hard_sigmoid",
+        kernel_quantizer=quantiser,
+        bias_quantizer=quantiser,
+        kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
+        bias_initializer="ones" if init_as_layer_sum else "zeros",
+        activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
+    )(x)
+
+    outputs = layers.Multiply()([weights, inputs])
+
+    model = Model(
+        inputs=inputs,
+        outputs=outputs,
+        name=name,
+    )
+
+    return model
+
+
+def ConeJetAlgo(
+    input_shape: tuple[int],
+    kernel_size: int = 9,
+    min_pt: float = 0,
+    max_jets: int = 20,
+    shape: str = "circle",
+    radius: float = None,
+    layer_name: str = "cone-layer",
+):
+    image = Input(shape=input_shape)
+
+    cone_sums = SlidingConeSum(
+        kernel_size=kernel_size,
+        shape=shape,
+        radius=radius,
+        name="cone_sum",
+    )(image)
+
+    # get good seed mask
+    local_max_seed_mask = LocalMaxMask(
+        kernel_size=kernel_size,
+        shape=shape,
+        name="local_max",
+    )(image)
+
+    # mask cone sums
+    masked_cone_sums = tf.where(local_max_seed_mask, cone_sums, 0)
+
+    # convert to 3-vectors
+    jet_vectors = ImageToMomenta(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
+
+    return Model(inputs=image, outputs=jet_vectors, name=layer_name)
+
+
+def JetEnergyResponseMLP(
+    hidden_layer_sizes: list[int] = [64, 64],
+    hidden_activation: str = "softplus",
+    eps: float = 1e-3,
+    name: str = "jet-calib",
+    monotonic: bool = True,
+    n_jets: int = 10,
+):
+    def get_layer(nodes, activation=None, monotonicity_indicator=None):
+        if monotonic:
+            if monotonicity_indicator is None:
+                return MonoDense(
+                    nodes,
+                    activation=activation,
+                    kernel_initializer=initializers.RandomNormal(stddev=1e-2),
+                )
+
+            else:
+                return MonoDense(
+                    nodes,
+                    activation=activation,
+                    kernel_initializer=initializers.RandomNormal(stddev=1e-2),
+                    monotonicity_indicator=monotonicity_indicator,
+                )
+        else:
+            return layers.Dense(
+                nodes,
+                activation=activation,
+            )
+
+    momenta = Input(shape=(n_jets, 3))
+
+    pt, eta, phi = unpack(momenta)
+
+    x = layers.Concatenate(axis=-1)([pt, tf.math.abs(eta)])
+    x = backend.log(x + eps)
+    for i, hls in enumerate(hidden_layer_sizes):
+        if i == 0:
+            layer = get_layer(
+                hls,
+                activation=hidden_activation,
+                monotonicity_indicator=[1, 0],
+            )
+        else:
+            layer = get_layer(hls, activation=hidden_activation)
+
+        x = layer(x)
+
+    log_pt = get_layer(1)(x)
+    gate_head = get_layer(1)(x)
+
+    calib_pt = backend.exp(backend.clip(log_pt, -10, 10))
+    gate = backend.sigmoid(gate_head)
+
+    gated_calib_pt = tf.where(pt > eps, gate * calib_pt, 0)
+
+    calib_momenta = layers.Concatenate(axis=-1)([gated_calib_pt, eta, phi])
+
+    return Model(inputs=momenta, outputs=calib_momenta, name=name)
+
+
+def MissingHT(name: str = "htmiss", n_jets: int = 10, **kwargs):
+    calib_layer = JetEnergyResponseMLP(name="htmiss_jet_calib", **kwargs)
+
+    jets = Input(shape=(n_jets, 3))
+    pt, _, phi = unpack(calib_layer(jets))
+
+    px = pt * tf.math.cos(phi)
+    py = pt * tf.math.sin(phi)
+
+    sum_px = tf.reduce_sum(px, axis=1)
+    sum_py = tf.reduce_sum(py, axis=1)
+
+    mht_xy = layers.Concatenate()([sum_px, sum_py])
+
+    return Model(inputs=jets, outputs=mht_xy, name=name)
+
+
+def HeterogeneousTrainableQuantizer(
+    input_shape: tuple[int],
+    bits: int,
+    min_range: float = 0,
+    max_range: float = 102,
+    T: float = 50,
+    train_min_range: bool = False,
+    train_max_range: bool = True,
+    train_widths: bool = True,
+    bin_regularisation: float = 1e-3,
+    smooth_in_forward: bool = True,
+    axis: int = -1,
+    **kwargs,
+):
+    quantizers = [
+        TrainableQuantizer(
+            bits=bits,
+            min_range=min_range,
+            max_range=max_range,
+            T=T,
+            train_max_range=train_max_range,
+            train_min_range=train_min_range,
+            train_widths=train_widths,
+            bin_regularisation=bin_regularisation,
+            smooth_in_forward=smooth_in_forward,
+            name=f"quantiser_{i}",
+        )
+        for i in range(input_shape[axis])
+    ]
+
+    x = Input(input_shape)
+    y = [quant(x_) for quant, x_ in zip(quantizers, tf.unstack(x, axis=axis))]
+    y = tf.stack(y, axis=axis)
+    return Model(x, y, **kwargs)

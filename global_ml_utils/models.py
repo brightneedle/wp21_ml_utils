@@ -45,8 +45,8 @@ def load_model(path, custom_objects={}):
             "CalibrationLoss": CalibrationLoss,
             "ChamferLoss": ChamferLoss,
             # quantisers
-            "TrainableQuantizer": TrainableQuantizer,
-            "QuadLinearQuantizer": QuadLinearQuantizer,
+            "TrainableQuantizer": TrainableQuantiser,
+            "QuadLinearQuantizer": QuadLinearQuantiser,
             # regularisers
             "PushMaxWeightToUnity": PushMaxWeightToUnity,
             "SparsityPenalty": SparsityPenalty,
@@ -305,7 +305,7 @@ def HeterogeneousTrainableQuantizer(
     **kwargs,
 ):
     quantizers = [
-        TrainableQuantizer(
+        TrainableQuantiser(
             bits=bits,
             min_range=min_range,
             max_range=max_range,

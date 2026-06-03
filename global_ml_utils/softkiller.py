@@ -1,14 +1,10 @@
-from tensorflow.keras import (
-    layers,
-)
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tensorflow.keras import layers
 import numpy as np
 
 
-from global_ml_utils.utils import (
-    take_median,
-)
+from global_ml_utils.utils import take_median
 
 tfb = tfp.bijectors
 

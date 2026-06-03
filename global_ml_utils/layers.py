@@ -1,9 +1,6 @@
-from tensorflow.keras import (
-    layers,
-    initializers,
-)
-import keras
 import tensorflow as tf
+import keras
+from tensorflow.keras import layers, initializers
 import tensorflow_probability as tfp
 import numpy as np
 from qkeras import QDense, quantized_bits

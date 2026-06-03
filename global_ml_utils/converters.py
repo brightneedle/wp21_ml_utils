@@ -1,8 +1,5 @@
-from tensorflow.keras import (
-    layers,
-    backend,
-)
 import tensorflow as tf
+from tensorflow.keras import layers, backend
 import numpy as np
 
 from global_ml_utils.layers import TowerEtaPhiLayer

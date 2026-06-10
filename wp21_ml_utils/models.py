@@ -1,60 +1,50 @@
 import tensorflow as tf
-from tensorflow.keras import layers, Input, backend, Model, initializers
-from qkeras import quantized_bits, QActivation, QDense
-from qkeras.utils import load_qmodel
+from tensorflow.keras import layers, Input, ops, Model, initializers
+from tensorflow.keras.models import load_model
 
 from airt.keras.layers import MonoDense
 
 from wp21_ml_utils.utils import unpack
-from wp21_ml_utils.layers import *
-from wp21_ml_utils.losses import *
-from wp21_ml_utils.regularisers import *
-from wp21_ml_utils.quantisers import *
-from wp21_ml_utils.converters import *
-from wp21_ml_utils.bijectors import *
-from wp21_ml_utils.softkiller import *
+from wp21_ml_utils.converters import ImageToVectors
+from wp21_ml_utils.layers import (
+    EtaPhiPadding,
+    SymmetricDepthwiseConv2D,
+    SlidingConeSum,
+    LocalMaxMask,
+    TowerEtaPhiLayer,
+)
+from wp21_ml_utils.regularisers import PushMaxWeightToUnity
+from wp21_ml_utils.quantisers import TrainableQuantiser
+from wp21_ml_utils.utils import init_dense_layer
 
-backend.set_image_data_format("channels_last")
 
+def load_wp21_model(path, custom_objects={}):
+    def collect_custom_objects():
+        import inspect
+        import wp21_ml_utils
+        import pkgutil
+        import importlib
 
-def load_model(path, custom_objects={}):
-    print("Loading saved model at", path)
-    return load_qmodel(
+        objects = {}
+        for _, module_name, _ in pkgutil.walk_packages(
+            wp21_ml_utils.__path__,
+            wp21_ml_utils.__name__ + ".",
+        ):
+            module = importlib.import_module(module_name)
+
+            for name, obj in inspect.getmembers(module):
+                if hasattr(obj, "get_config") and isinstance(obj, type):
+                    objects[name] = obj
+
+        return objects
+
+    return load_model(
         path,
         custom_objects={
             **custom_objects,
+            **collect_custom_objects(),
             # monotonic dense layers
-            "MonoDense": MonoDense,
-            # custom layers
-            "SymmetricPooling": SymmetricPooling,
-            "QSymmetricDepthwiseConv2D": QSymmetricDepthwiseConv2D,
-            "SymmetricDepthwiseConv2D": SymmetricDepthwiseConv2D,
-            "SlidingConeSum": SlidingConeSum,
-            "LocalMaxMask": LocalMaxMask,
-            "TowerEtaPhiLayer": TowerEtaPhiLayer,
-            "EtaPhiPadding": EtaPhiPadding,
-            "NthLeadingPt": NthLeadingPt,
-            "VectorSumPt": VectorSumPt,
-            "CircularMaxPool": CircularMaxPool,
-            # converters
-            "ImageToVectors": ImageToVectors,
-            "VectorsToImage": VectorsToImage,
-            # bijectors
-            "RQSLayer": RQSLayer,
-            "ConditionalRQSLayer": ConditionalRQSLayer,
-            # losses
-            "SparsityLoss": SparsityLoss,
-            "CalibrationLoss": CalibrationLoss,
-            "ChamferLoss": ChamferLoss,
-            # quantisers
-            "TrainableQuantizer": TrainableQuantiser,
-            "QuadLinearQuantizer": QuadLinearQuantiser,
-            # regularisers
-            "PushMaxWeightToUnity": PushMaxWeightToUnity,
-            "SparsityPenalty": SparsityPenalty,
-            # softkiller
-            "SoftKiller": SoftKiller,
-            "SoftKillerWithAreaCorrection": SoftKillerWithAreaCorrection,
+            # "MonoDense": MonoDense,
         },
     )
 
@@ -64,10 +54,11 @@ def PileUpCNN(
     size: int = 3,
     depth_multiplier: int = 4,
     hidden_layer_sizes: list[int] = [32, 32],
-    name: str = "pileup-cnn",
+    use_hgq: bool = False,
     init_as_layer_sum: bool = True,
     with_abseta: bool = True,
     push_max_to_unity: bool = False,
+    **kwargs,
 ):
     inputs = Input(shape=input_shape)
 
@@ -76,21 +67,19 @@ def PileUpCNN(
         kernel_size=size,
         input_channels=input_shape[-1],
         depth_multiplier=depth_multiplier,
+        use_hgq=use_hgq,
+        activation="relu",
     )(x)
-    x = layers.Activation("relu")(x)
 
     if with_abseta:
         eta, _ = TowerEtaPhiLayer()(inputs)
-        log_abseta = backend.log(backend.abs(eta) + 1e-3)
+        log_abseta = ops.log(ops.abs(eta) + 1e-3)
         x = layers.Concatenate(axis=-1)([x, log_abseta])
 
     for layer_size in hidden_layer_sizes:
-        x = layers.Dense(
-            layer_size,
-            activation="relu",
-        )(x)
+        x = init_dense_layer(layer_size, activation="relu", use_hgq=use_hgq)(x)
 
-    w = layers.Dense(
+    w = init_dense_layer(
         input_shape[-1],
         activation="hard_sigmoid",
         kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
@@ -103,78 +92,7 @@ def PileUpCNN(
     model = Model(
         inputs=inputs,
         outputs=outputs,
-        name=name,
-    )
-
-    return model
-
-
-def PileUpQCNN(
-    input_shape: tuple[int],
-    size: int = 3,
-    depth_multiplier: int = 4,
-    hidden_layer_sizes: list[int] = [32, 32],
-    name: str = "pileup-cnn",
-    init_as_layer_sum: bool = False,
-    with_abseta: bool = True,
-    push_max_to_unity: bool = False,
-    bits: int = 10,
-):
-    def init_qrelu(precision: int, integer: int = None):
-        return QActivation(
-            f"quantized_relu({precision},{precision // 2 if integer is None else integer})"
-        )
-
-    def init_quantiser(precision: int, integer: int = None):
-        return quantized_bits(
-            bits=precision,
-            integer=precision // 2 if integer is None else integer,
-            alpha=1,
-        )
-
-    quantiser = init_quantiser(bits, 2)
-
-    inputs = Input(shape=input_shape)
-
-    x = EtaPhiPadding(size // 2)(inputs)
-    x = QSymmetricDepthwiseConv2D(
-        kernel_size=size,
-        input_channels=input_shape[-1],
-        depth_multiplier=depth_multiplier,
-        bias_quantizer=quantiser,
-        kernel_quantizer=quantiser,
-    )(x)
-    x = init_qrelu(bits)(x)
-
-    if with_abseta:
-        eta, _ = TowerEtaPhiLayer()(inputs)
-        log_abseta = backend.log(backend.abs(eta) + 1e-3)
-        x = layers.Concatenate(axis=-1)([x, log_abseta])
-
-    for layer_size in hidden_layer_sizes:
-        x = QDense(
-            layer_size,
-            kernel_quantizer=quantiser,
-            bias_quantizer=quantiser,
-        )(x)
-        x = init_qrelu(bits)(x)
-
-    weights = QDense(
-        input_shape[-1],
-        activation="hard_sigmoid",
-        kernel_quantizer=quantiser,
-        bias_quantizer=quantiser,
-        kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
-        bias_initializer="ones" if init_as_layer_sum else "zeros",
-        activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
-    )(x)
-
-    outputs = layers.Multiply()([weights, inputs])
-
-    model = Model(
-        inputs=inputs,
-        outputs=outputs,
-        name=name,
+        **kwargs,
     )
 
     return model
@@ -249,7 +167,7 @@ def JetEnergyResponseMLP(
     pt, eta, phi = unpack(momenta)
 
     x = layers.Concatenate(axis=-1)([pt, tf.math.abs(eta)])
-    x = backend.log(x + eps)
+    x = ops.log(x + eps)
     for i, hls in enumerate(hidden_layer_sizes):
         if i == 0:
             layer = get_layer(
@@ -265,8 +183,8 @@ def JetEnergyResponseMLP(
     log_pt = get_layer(1)(x)
     gate_head = get_layer(1)(x)
 
-    calib_pt = backend.exp(backend.clip(log_pt, -10, 10))
-    gate = backend.sigmoid(gate_head)
+    calib_pt = ops.exp(ops.clip(log_pt, -10, 10))
+    gate = ops.sigmoid(gate_head)
 
     gated_calib_pt = tf.where(pt > eps, gate * calib_pt, 0)
 

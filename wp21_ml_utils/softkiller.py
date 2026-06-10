@@ -1,12 +1,9 @@
 import tensorflow as tf
-import tensorflow_probability as tfp
 from tensorflow.keras import layers
 import numpy as np
 
 
 from wp21_ml_utils.utils import take_median
-
-tfb = tfp.bijectors
 
 
 class SoftKiller(layers.Layer):
@@ -28,6 +25,7 @@ class SoftKiller(layers.Layer):
             **super().get_config(),
             "patch_size": self.patch_size,
         }
+
 
 class SoftKillerWithAreaCorrection(layers.Layer):
     def __init__(self, patch_size=(5, 8), pixel_area=0.1 * np.pi / 32, **kwargs):
@@ -58,5 +56,5 @@ class SoftKillerWithAreaCorrection(layers.Layer):
         return {
             **super().get_config(),
             "patch_size": self.patch_size,
-            "pixel_area" : self.pixel_area
+            "pixel_area": self.pixel_area,
         }

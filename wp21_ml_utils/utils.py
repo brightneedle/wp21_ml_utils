@@ -1,4 +1,6 @@
 import tensorflow as tf
+from tensorflow.keras.layers import Dense
+from hgq.layers import QDense
 
 
 def unpack(momenta):
@@ -23,18 +25,6 @@ def get_layer_dict(model):
 def softplus(x, k=1.0):
     k_safe = tf.maximum(k, 1e-6)
     return tf.nn.softplus(k * x) / k_safe / tf.math.log(2.0)
-
-
-def smooth_piecewise_linear(x, left_slope, right_slope, k=1):
-    return left_slope * softplus(x, k) - right_slope * softplus(-x, k)
-
-
-def smooth_piecewise_linear_deriv(x, left_slope, right_slope, k=1):
-    k_safe = tf.maximum(k, 1e-6)
-    return (
-        left_slope * tf.nn.sigmoid(k_safe * x)
-        + right_slope * tf.nn.sigmoid(-k_safe * x)
-    ) / tf.math.log(2.0)
 
 
 def diff(x):
@@ -63,3 +53,10 @@ def augment_image(X):
     )
 
     return aug_X
+
+
+def init_dense_layer(units, use_hgq: bool = False, *args, **kwargs):
+    if use_hgq:
+        return QDense(units, *args, **kwargs)
+    else:
+        return Dense(units, *args, **kwargs)

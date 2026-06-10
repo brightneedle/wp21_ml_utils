@@ -10,11 +10,9 @@ setup(
     license="BSD 2-clause",
     packages=["wp21_ml_utils"],
     install_requires=[
-        "tensorflow[and-cuda]==2.14",
-        "qkeras",
-        "numpy",
-        "airt",
-        "tensorflow-probability",
+        "tensorflow[and-cuda]==2.18",
+        "HGQ2==0.1.8",
+        "monotonic-nn",
     ],
     classifiers=[
         "Development Status :: 1 - Planning",

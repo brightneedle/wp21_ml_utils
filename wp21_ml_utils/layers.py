@@ -1,18 +1,14 @@
 import tensorflow as tf
 import keras
 from tensorflow.keras import layers, initializers
-import tensorflow_probability as tfp
+from tensorflow.keras.backend import set_image_data_format
 import numpy as np
-from qkeras import QDense, quantized_bits
 import itertools
 
 
-from wp21_ml_utils.utils import (
-    unpack,
-    polar_to_cartesian,
-)
+from wp21_ml_utils.utils import unpack, polar_to_cartesian, init_dense_layer
 
-tfb = tfp.bijectors
+set_image_data_format("channels_last")
 
 
 class RandomSymmetricKernel(initializers.Initializer):
@@ -60,18 +56,32 @@ class SymmetricPooling(layers.Layer):
 
 class SymmetricDepthwiseConv2D(layers.Layer):
     def __init__(
-        self, kernel_size: int, depth_multiplier: int, input_channels: int = 6, **kwargs
+        self,
+        kernel_size: int,
+        depth_multiplier: int,
+        input_channels: int = 6,
+        activation: str = None,
+        use_hgq: bool = False,
+        **kwargs,
     ):
         super().__init__()
 
         self.kernel_size = kernel_size
         self.input_channels = input_channels
         self.depth_multiplier = depth_multiplier
+        self.activation = activation
+        self.use_hgq = use_hgq
 
         self.pooling = SymmetricPooling(size=kernel_size, input_channels=input_channels)
         self.dense_layers = []
         for _ in range(input_channels):
-            self.dense_layers.append(layers.Dense(depth_multiplier))
+            self.dense_layers.append(
+                init_dense_layer(
+                    depth_multiplier,
+                    activation=activation,
+                    use_hgq=use_hgq,
+                )
+            )
 
     def call(self, inputs):
         pooled_inputs = self.pooling(inputs)
@@ -90,46 +100,6 @@ class SymmetricDepthwiseConv2D(layers.Layer):
             "depth_multiplier": self.depth_multiplier,
             "dense_layers": keras.saving.serialize_keras_object(self.dense_layers),
             "input_channels": self.input_channels,
-        }
-        return {**base_config, **config}
-
-
-class QSymmetricDepthwiseConv2D(SymmetricDepthwiseConv2D):
-    def __init__(
-        self,
-        kernel_size: int,
-        kernel_quantizer: quantized_bits,
-        bias_quantizer: quantized_bits,
-        depth_multiplier: int = 1,
-        input_channels: int = 6,
-        **kwargs,
-    ):
-        super().__init__(
-            kernel_size=kernel_size,
-            depth_multiplier=depth_multiplier,
-            input_channels=input_channels,
-            **kwargs,
-        )
-
-        self.bias_quantizer = bias_quantizer
-        self.kernel_quantizer = kernel_quantizer
-        self.dense_layers = []
-        for _ in range(input_channels):
-            self.dense_layers.append(
-                QDense(
-                    depth_multiplier,
-                    kernel_quantizer=kernel_quantizer,
-                    bias_quantizer=bias_quantizer,
-                )
-            )
-
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "bias_quantizer": keras.saving.serialize_keras_object(self.bias_quantizer),
-            "kernel_quantizer": keras.saving.serialize_keras_object(
-                self.kernel_quantizer
-            ),
         }
         return {**base_config, **config}
 

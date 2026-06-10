@@ -7,7 +7,7 @@ from qkeras import QDense, quantized_bits
 import itertools
 
 
-from global_ml_utils.utils import (
+from wp21_ml_utils.utils import (
     unpack,
     polar_to_cartesian,
 )

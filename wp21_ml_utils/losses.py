@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import losses
 import numpy as np
 
-from global_ml_utils.utils import unpack, polar_to_cartesian, transpose
+from wp21_ml_utils.utils import unpack, polar_to_cartesian, transpose
 
 
 def masked_pairwise_distances(p_true, p_pred, pt_weight=1):

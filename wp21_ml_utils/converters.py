@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, backend
 import numpy as np
 
-from global_ml_utils.layers import TowerEtaPhiLayer
+from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
 class ImageToVectors(layers.Layer):
@@ -101,3 +101,10 @@ class VectorsToImage(layers.Layer):
         towers = tf.expand_dims(towers, axis=-1)
 
         return towers
+
+    def get_config(self):
+        return {
+            **super().get_config(),
+            "eta_edges": self.eta_edges,
+            "phi_edges": self.phi_edges,
+        }

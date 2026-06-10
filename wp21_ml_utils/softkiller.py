@@ -4,7 +4,7 @@ from tensorflow.keras import layers
 import numpy as np
 
 
-from global_ml_utils.utils import take_median
+from wp21_ml_utils.utils import take_median
 
 tfb = tfp.bijectors
 
@@ -23,6 +23,11 @@ class SoftKiller(layers.Layer):
         sk_towers = tf.where(image > median_max, image, 0)
         return sk_towers
 
+    def get_config(self):
+        return {
+            **super().get_config(),
+            "patch_size": self.patch_size,
+        }
 
 class SoftKillerWithAreaCorrection(layers.Layer):
     def __init__(self, patch_size=(5, 8), pixel_area=0.1 * np.pi / 32, **kwargs):
@@ -48,3 +53,10 @@ class SoftKillerWithAreaCorrection(layers.Layer):
         median_max = take_median(local_max)
         sk_towers = tf.where(image_rho_sub > median_max, image_rho_sub, 0)
         return sk_towers
+
+    def get_config(self):
+        return {
+            **super().get_config(),
+            "patch_size": self.patch_size,
+            "pixel_area" : self.pixel_area
+        }

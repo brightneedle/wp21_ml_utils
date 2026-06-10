@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import initializers, layers
 
-from global_ml_utils.utils import softplus
+from wp21_ml_utils.utils import softplus
 
 
 class QuadLinearQuantiser(layers.Layer):

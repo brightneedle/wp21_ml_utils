@@ -8,7 +8,7 @@ from tensorflow.keras import (
 import tensorflow_probability as tfp
 
 
-from global_ml_utils.utils import (
+from wp21_ml_utils.utils import (
     softplus,
     smooth_piecewise_linear,
     smooth_piecewise_linear_deriv,

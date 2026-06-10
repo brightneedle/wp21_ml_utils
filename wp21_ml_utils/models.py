@@ -5,14 +5,14 @@ from qkeras.utils import load_qmodel
 
 from airt.keras.layers import MonoDense
 
-from global_ml_utils.utils import unpack
-from global_ml_utils.layers import *
-from global_ml_utils.losses import *
-from global_ml_utils.regularisers import *
-from global_ml_utils.quantisers import *
-from global_ml_utils.converters import *
-from global_ml_utils.bijectors import *
-from global_ml_utils.softkiller import *
+from wp21_ml_utils.utils import unpack
+from wp21_ml_utils.layers import *
+from wp21_ml_utils.losses import *
+from wp21_ml_utils.regularisers import *
+from wp21_ml_utils.quantisers import *
+from wp21_ml_utils.converters import *
+from wp21_ml_utils.bijectors import *
+from wp21_ml_utils.softkiller import *
 
 backend.set_image_data_format("channels_last")
 

@@ -44,12 +44,12 @@ def test_quantiser():
     G = model.layers[0].G.numpy().item()
     lsb = model.layers[0].lsb.numpy().item()
 
-    fig, ax = plt.subplots(ncols=2, figsize=(10, 5), dpi=150, layout="constrained")
-    ax[0].scatter(x, x, s=0.2)
-    ax[0].scatter(x, model.predict(x), label=f"G={G:.3g}, LSB={lsb:.3g}", s=0.2)
+    fig, ax = plt.subplots(ncols=2, figsize=(8, 4), dpi=150, layout="constrained")
+    ax[0].scatter(x, x, s=0.2, label='x')
+    ax[0].scatter(x, model.predict(x), label=f"Q(x) G={G:.3g}, LSB={lsb:.3g}", s=0.2)
     ax[0].set_yscale("log")
     ax[0].set_xscale("log")
-    ax[1].legend()
+    ax[0].legend()
 
     ax[1].plot(model.layers[0]._compute_bin_edges().numpy())
 

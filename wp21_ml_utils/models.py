@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, Input, ops, Model, initializers
 from tensorflow.keras.models import load_model
 
-from airt.keras.layers import MonoDense
+# from airt.keras.layers import MonoDense
 
 from wp21_ml_utils.utils import unpack
 from wp21_ml_utils.converters import ImageToVectors
@@ -16,6 +16,8 @@ from wp21_ml_utils.layers import (
 from wp21_ml_utils.regularisers import PushMaxWeightToUnity
 from wp21_ml_utils.quantisers import TrainableQuantiser
 from wp21_ml_utils.utils import init_dense_layer
+
+from wp21_ml_utils.monodense import MonoDense
 
 
 def load_wp21_model(path, custom_objects={}):
@@ -43,8 +45,6 @@ def load_wp21_model(path, custom_objects={}):
         custom_objects={
             **custom_objects,
             **collect_custom_objects(),
-            # monotonic dense layers
-            # "MonoDense": MonoDense,
         },
     )
 
@@ -166,7 +166,7 @@ def JetEnergyResponseMLP(
 
     pt, eta, phi = unpack(momenta)
 
-    x = layers.Concatenate(axis=-1)([pt, tf.math.abs(eta)])
+    x = layers.Concatenate(axis=-1)([pt, ops.abs(eta)])
     x = ops.log(x + eps)
     for i, hls in enumerate(hidden_layer_sizes):
         if i == 0:
@@ -186,7 +186,7 @@ def JetEnergyResponseMLP(
     calib_pt = ops.exp(ops.clip(log_pt, -10, 10))
     gate = ops.sigmoid(gate_head)
 
-    gated_calib_pt = tf.where(pt > eps, gate * calib_pt, 0)
+    gated_calib_pt = ops.where(pt > eps, gate * calib_pt, 0)
 
     calib_momenta = layers.Concatenate(axis=-1)([gated_calib_pt, eta, phi])
 

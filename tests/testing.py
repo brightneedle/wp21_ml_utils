@@ -1,4 +1,8 @@
 import os
+import matplotlib.pyplot as plt
+
+plt.rcParams["figure.dpi"] = 150
+plt.rcParams["figure.constrained_layout.use"] = True
 
 output_dir = os.path.join("./test_outputs")
 
@@ -32,7 +36,6 @@ def test_quantiser():
     import numpy as np
     from tensorflow.keras import Sequential
     from wp21_ml_utils.quantisers import QuadLinearQuantiser
-    import matplotlib.pyplot as plt
 
     model = Sequential([QuadLinearQuantiser(bits=4, trainable=True)])
     model.compile(loss="mse", optimizer="adam")
@@ -44,8 +47,8 @@ def test_quantiser():
     G = model.layers[0].G.numpy().item()
     lsb = model.layers[0].lsb.numpy().item()
 
-    fig, ax = plt.subplots(ncols=2, figsize=(8, 4), dpi=150, layout="constrained")
-    ax[0].scatter(x, x, s=0.2, label='x')
+    fig, ax = plt.subplots(ncols=2, figsize=(8, 4))
+    ax[0].scatter(x, x, s=0.2, label="x")
     ax[0].scatter(x, model.predict(x), label=f"Q(x) G={G:.3g}, LSB={lsb:.3g}", s=0.2)
     ax[0].set_yscale("log")
     ax[0].set_xscale("log")
@@ -54,4 +57,29 @@ def test_quantiser():
     ax[1].plot(model.layers[0]._compute_bin_edges().numpy())
 
     plt.savefig(os.path.join(output_dir, "quantiser_test.png"))
+    plt.close()
+
+
+def test_jet_calib():
+    import numpy as np
+    from wp21_ml_utils.models import JetEnergyResponseMLP
+    from wp21_ml_utils.losses import CalibrationLoss
+
+    model = JetEnergyResponseMLP(n_jets=1)
+    model.compile(loss=CalibrationLoss(), optimizer="adam")
+
+    pt = np.random.uniform(0, 2 * np.pi, size=(10000, 1))
+    eta = np.random.uniform(-2.5, 2.5, size=pt.shape)
+    phi = np.random.uniform(-np.pi, np.pi, size=pt.shape)
+
+    inputs = np.stack([pt, eta, phi], axis=-1)
+    targets = np.stack([pt + np.sin(pt), eta, phi], axis=-1)
+
+    model.fit(inputs, targets, batch_size=32, epochs=10)
+
+    plt.figure(figsize=(4, 4))
+    plt.scatter(inputs[..., 0], targets[..., 0], s=0.1, label="True")
+    plt.scatter(pt, model.predict(inputs)[..., 0], s=0.1, label="MLP")
+    plt.legend()
+    plt.savefig(os.path.join(output_dir, "jet_calib_test.png"))
     plt.close()

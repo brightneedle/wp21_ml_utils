@@ -1,10 +1,19 @@
 import tensorflow as tf
+from tensorflow.keras import ops
 from tensorflow.keras.layers import Dense
 from hgq.layers import QDense
 
 
 def unpack(momenta):
-    return tf.unstack(tf.expand_dims(momenta, axis=-1), axis=-2)
+    tf.debugging.assert_equal(
+        ops.shape(momenta)[-1],
+        3,
+        message="Last dimension of momenta must be 3 (pt, eta, phi)",
+    )
+    pt = momenta[..., 0, None]
+    eta = momenta[..., 1, None]
+    phi = momenta[..., 2, None]
+    return pt, eta, phi
 
 
 def polar_to_cartesian(pt, eta, phi):

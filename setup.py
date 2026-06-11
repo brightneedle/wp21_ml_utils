@@ -9,10 +9,7 @@ setup(
     author_email="noah.clarkehall@cern.ch",
     license="BSD 2-clause",
     packages=["wp21_ml_utils"],
-    install_requires=[
-        "tensorflow[and-cuda]==2.18",
-        "HGQ2==0.1.8",
-    ],
+    install_requires=["tensorflow[and-cuda]==2.18", "HGQ2==0.1.8", "pytest"],
     classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Science/Research",

@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, backend
 import numpy as np
 
+from wp21_ml_utils.utils import unpack
 from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
@@ -55,10 +56,8 @@ class VectorsToImage(layers.Layer):
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
 
-    def call(self, pt, eta, phi):
-        pt = tf.cast(pt, tf.float32)
-        eta = tf.cast(eta, tf.float32)
-        phi = tf.cast(phi, tf.float32)
+    def call(self, x):
+        pt, eta, phi = unpack(x, expand=False)
 
         B = tf.shape(pt)[0]
         N = tf.shape(pt)[1]

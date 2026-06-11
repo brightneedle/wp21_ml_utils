@@ -4,15 +4,10 @@ from tensorflow.keras.layers import Dense
 from hgq.layers import QDense
 
 
-def unpack(momenta):
-    tf.debugging.assert_equal(
-        ops.shape(momenta)[-1],
-        3,
-        message="Last dimension of momenta must be 3 (pt, eta, phi)",
+def unpack(momenta, expand=True):
+    pt, eta, phi = ops.unstack(
+        ops.expand_dims(momenta, axis=-2) if expand else momenta, axis=-1
     )
-    pt = momenta[..., 0, None]
-    eta = momenta[..., 1, None]
-    phi = momenta[..., 2, None]
     return pt, eta, phi
 
 

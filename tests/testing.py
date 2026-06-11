@@ -5,6 +5,7 @@ plt.rcParams["figure.dpi"] = 150
 plt.rcParams["figure.constrained_layout.use"] = True
 
 output_dir = os.path.join("./test_outputs")
+os.makedirs(output_dir, exist_ok=True)
 
 
 def test_imports():
@@ -23,11 +24,9 @@ def test_model_load():
     import os
     from wp21_ml_utils.models import PileUpCNN, load_wp21_model
 
-    model = PileUpCNN((50, 64, 6))
+    model = PileUpCNN((50, 64, 6), use_hgq=True)
 
-    output_path = os.path.join(output_dir, "test_model.keras")
-    os.makedirs(output_dir, exist_ok=True)
-
+    output_path = os.path.join(output_dir, "test_qcnn.keras")
     model.save(output_path)
     load_wp21_model(output_path)
 
@@ -35,6 +34,7 @@ def test_model_load():
 def test_quantiser():
     import numpy as np
     from tensorflow.keras import Sequential
+    from wp21_ml_utils.models import load_wp21_model
     from wp21_ml_utils.quantisers import QuadLinearQuantiser
 
     model = Sequential([QuadLinearQuantiser(bits=4, trainable=True)])
@@ -59,10 +59,14 @@ def test_quantiser():
     plt.savefig(os.path.join(output_dir, "quantiser_test.png"))
     plt.close()
 
+    output_path = os.path.join(output_dir, "test_quantiser.keras")
+    model.save(output_path)
+    load_wp21_model(output_path)
+
 
 def test_jet_calib():
     import numpy as np
-    from wp21_ml_utils.models import JetEnergyResponseMLP
+    from wp21_ml_utils.models import JetEnergyResponseMLP, load_wp21_model
     from wp21_ml_utils.losses import CalibrationLoss
 
     model = JetEnergyResponseMLP(n_jets=1)
@@ -83,3 +87,7 @@ def test_jet_calib():
     plt.legend()
     plt.savefig(os.path.join(output_dir, "jet_calib_test.png"))
     plt.close()
+
+    output_path = os.path.join(output_dir, "test_jes_mlp.keras")
+    model.save(output_path)
+    load_wp21_model(output_path)

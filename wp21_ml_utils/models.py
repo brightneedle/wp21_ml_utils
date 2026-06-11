@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, Input, ops, Model, initializers
 from tensorflow.keras.models import load_model
 
-# from airt.keras.layers import MonoDense
+# import hgq
 
 from wp21_ml_utils.utils import unpack
 from wp21_ml_utils.converters import ImageToVectors
@@ -12,20 +12,20 @@ from wp21_ml_utils.layers import (
     SlidingConeSum,
     LocalMaxMask,
     TowerEtaPhiLayer,
+    MonoDense,
 )
 from wp21_ml_utils.regularisers import PushMaxWeightToUnity
 from wp21_ml_utils.quantisers import TrainableQuantiser
 from wp21_ml_utils.utils import init_dense_layer
 
-from wp21_ml_utils.monodense import MonoDense
-
 
 def load_wp21_model(path, custom_objects={}):
     def collect_custom_objects():
         import inspect
-        import wp21_ml_utils
         import pkgutil
         import importlib
+
+        import wp21_ml_utils
 
         objects = {}
         for _, module_name, _ in pkgutil.walk_packages(
@@ -40,13 +40,10 @@ def load_wp21_model(path, custom_objects={}):
 
         return objects
 
-    return load_model(
-        path,
-        custom_objects={
-            **custom_objects,
-            **collect_custom_objects(),
-        },
-    )
+    custom_objects.update(collect_custom_objects())
+    # custom_objects["QDense"] = hgq.layers.QDense
+
+    return load_model(path, custom_objects=custom_objects)
 
 
 def PileUpCNN(
@@ -85,6 +82,7 @@ def PileUpCNN(
         kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
         bias_initializer="ones" if init_as_layer_sum else "zeros",
         activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
+        use_hgq=use_hgq,
     )(x)
 
     outputs = layers.Multiply()([w, inputs])

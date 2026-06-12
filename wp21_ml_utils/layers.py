@@ -7,7 +7,12 @@ from tensorflow.types.experimental import TensorLike
 import numpy as np
 import itertools
 
-from wp21_ml_utils.utils import unpack, polar_to_cartesian, init_dense_layer
+from wp21_ml_utils.utils import (
+    unpack_momenta,
+    polar_to_cartesian,
+    init_dense_layer,
+    cartesian_to_polar,
+)
 
 set_image_data_format("channels_last")
 
@@ -278,15 +283,45 @@ class NthLeadingPt(layers.Layer):
         }
 
 
-class VectorSumPt(layers.Layer):
-    def __init__(self, **kwargs):
+class VectorSum(layers.Layer):
+    def __init__(self, input: str = "polar", output: str = "polar", **kwargs):
         super().__init__(**kwargs)
+        self.input = input
+        self.output = output
 
-    def call(self, jets):
-        px, py, _ = polar_to_cartesian(*unpack(jets))
+        if self.input not in ["polar", "cartesian"]:
+            raise ValueError(
+                f"'input' must be 'polar' or 'cartesian', got '{self.input}'"
+            )
+
+        if self.output not in ["polar", "cartesian"]:
+            raise ValueError(
+                f"'output' must be 'polar' or 'cartesian', got '{self.output}'"
+            )
+
+    def call(self, x):
+        components = unpack_momenta(x)
+        if self.input == "polar":
+            px, py, pz = polar_to_cartesian(components)
+        else:
+            px, py, pz = components
+
         sum_px = tf.reduce_sum(px, axis=1)
         sum_py = tf.reduce_sum(py, axis=1)
-        return sum_px**2 + sum_py**2
+        sum_pz = tf.reduce_sum(pz, axis=1)
+
+        if self.output == "polar":
+            sum_components = cartesian_to_polar(sum_px, sum_py, sum_pz)
+        else:
+            sum_components = sum_px, sum_py, sum_pz
+
+        return tf.concat([sum_components], axis=1)
+
+    def get_config(self):
+        return {
+            **super().get_config(),
+            "jet_idx": self.jet_idx,
+        }
 
 
 class MonoDense(layers.Dense):

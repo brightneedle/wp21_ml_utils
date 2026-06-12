@@ -4,22 +4,29 @@ from tensorflow.keras.layers import Dense
 from hgq.layers import QDense
 
 
-def unpack(momenta, expand=True):
-    pt, eta, phi = ops.unstack(
+def unpack_momenta(momenta, expand=True):
+    x, y, z = ops.unstack(
         ops.expand_dims(momenta, axis=-2) if expand else momenta, axis=-1
     )
-    return pt, eta, phi
+    return x, y, z
 
 
 def polar_to_cartesian(pt, eta, phi):
-    px = pt * tf.math.cos(phi)
-    py = pt * tf.math.sin(phi)
-    pz = pt * tf.math.sinh(eta)
+    px = pt * ops.cos(phi)
+    py = pt * ops.sin(phi)
+    pz = pt * ops.sinh(eta)
     return px, py, pz
 
 
+def cartesian_to_polar(px, py, pz):
+    pt = ops.sqrt(ops.square(px) + ops.square(py))
+    eta = pt * ops.arcsinh(pz / ops.minimum(pt, 1e-12))
+    phi = pt * ops.arctan2(py, px)
+    return pt, eta, phi
+
+
 def transpose(x):
-    return tf.transpose(x, (0, 2, 1))
+    return ops.transpose(x, (0, 2, 1))
 
 
 def get_layer_dict(model):
@@ -27,8 +34,8 @@ def get_layer_dict(model):
 
 
 def softplus(x, k=1.0):
-    k_safe = tf.maximum(k, 1e-6)
-    return tf.nn.softplus(k * x) / k_safe / tf.math.log(2.0)
+    k_safe = ops.maximum(k, 1e-6)
+    return ops.softplus(k * x) / k_safe / ops.log(2.0)
 
 
 def diff(x):

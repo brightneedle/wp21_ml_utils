@@ -4,7 +4,7 @@ from tensorflow.keras.models import load_model
 
 # import hgq
 
-from wp21_ml_utils.utils import unpack
+from wp21_ml_utils.utils import unpack_momenta
 from wp21_ml_utils.converters import ImageToVectors
 from wp21_ml_utils.layers import (
     EtaPhiPadding,
@@ -162,7 +162,7 @@ def JetEnergyResponseMLP(
 
     momenta = Input(shape=(max_jets, 3))
 
-    pt, eta, phi = unpack(momenta)
+    pt, eta, phi = unpack_momenta(momenta)
 
     x = layers.Concatenate(axis=-1)([pt, ops.abs(eta)])
     x = ops.log(x + eps)
@@ -189,23 +189,6 @@ def JetEnergyResponseMLP(
     calib_momenta = layers.Concatenate(axis=-1)([gated_calib_pt, eta, phi])
 
     return Model(inputs=momenta, outputs=calib_momenta, name=name)
-
-
-def MissingHT(name: str = "htmiss", n_jets: int = 10, **kwargs):
-    calib_layer = JetEnergyResponseMLP(name="htmiss_jet_calib", **kwargs)
-
-    jets = Input(shape=(n_jets, 3))
-    pt, _, phi = unpack(calib_layer(jets))
-
-    px = pt * tf.math.cos(phi)
-    py = pt * tf.math.sin(phi)
-
-    sum_px = tf.reduce_sum(px, axis=1)
-    sum_py = tf.reduce_sum(py, axis=1)
-
-    mht_xy = layers.Concatenate()([sum_px, sum_py])
-
-    return Model(inputs=jets, outputs=mht_xy, name=name)
 
 
 def HeterogeneousTrainableQuantizer(

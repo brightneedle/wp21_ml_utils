@@ -1,8 +1,9 @@
 import tensorflow as tf
-from tensorflow.keras import layers, backend
+from tensorflow.keras import layers
+from tensorflow.types.experimental import TensorLike
 import numpy as np
 
-from wp21_ml_utils.utils import unpack
+from wp21_ml_utils.utils import unpack_momenta
 from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
@@ -18,7 +19,7 @@ class ImageToVectors(layers.Layer):
 
         eta, phi = self.get_coords(image)
 
-        pt = backend.sum(image, axis=-1, keepdims=True)
+        pt = tf.reduce_sum(image, axis=-1, keepdims=True)
 
         flat_pt = tf.reshape(pt, [B, E * P])
         flat_eta = tf.reshape(eta, [B, E * P])
@@ -49,15 +50,15 @@ class ImageToVectors(layers.Layer):
 class VectorsToImage(layers.Layer):
     def __init__(
         self,
-        eta_edges: tf.Tensor = tf.linspace(-2.5, 2.5, 51),
-        phi_edges: tf.Tensor = tf.linspace(-np.pi, np.pi, 65),
+        eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
+        phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
     ):
         super().__init__()
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
 
     def call(self, x):
-        pt, eta, phi = unpack(x, expand=False)
+        pt, eta, phi = unpack_momenta(x, expand=False)
 
         B = tf.shape(pt)[0]
         N = tf.shape(pt)[1]

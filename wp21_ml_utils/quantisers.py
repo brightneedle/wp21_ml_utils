@@ -34,9 +34,7 @@ class TrainableQuantiser(layers.Layer):
 
         return tf.reshape(y_flat, x_shape)
 
-    def get_config(
-        self,
-    ):
+    def get_config(self):
         return {**super().get_config(), "T": self.T}
 
 
@@ -140,7 +138,7 @@ class FlexibleQuantiser(TrainableQuantiser):
             name=f"{self.name}_bin_widths",
         )
 
-    def get_bin_edges(self):
+    def _compute_bin_edges(self):
         range_scale = softplus(self.range_scale)
         bin_widths = tf.nn.softmax(self.bin_widths)
 

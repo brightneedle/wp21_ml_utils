@@ -31,37 +31,37 @@ def test_model_load():
     load_wp21_model(output_path)
 
 
-def test_quantiser():
+def test_quantisers():
     import numpy as np
     from tensorflow.keras import Sequential
     from wp21_ml_utils.models import load_wp21_model
-    from wp21_ml_utils.quantisers import QuadLinearQuantiser
-
-    model = Sequential([QuadLinearQuantiser(bits=4, trainable=True)])
-    model.compile(loss="mse", optimizer="adam")
+    from wp21_ml_utils.quantisers import QuadLinearQuantiser, FlexibleQuantiser
 
     x = np.exp(np.random.normal(size=(10000, 1)))
 
-    model.fit(x, x, batch_size=32, epochs=10)
+    for qlayer in [
+        QuadLinearQuantiser(bits=4, trainable=True),
+        FlexibleQuantiser(bits=4, train_max_range=True, train_widths=True),
+    ]:
+        model = Sequential([qlayer])
+        model.compile(loss="mse", optimizer="adam")
+        model.fit(x, x, batch_size=32, epochs=10)
 
-    G = model.layers[0].G.numpy().item()
-    lsb = model.layers[0].lsb.numpy().item()
+        fig, ax = plt.subplots(ncols=2, figsize=(8, 4))
+        ax[0].scatter(x, x, s=0.2, label="x")
+        ax[0].scatter(x, model.predict(x), label="Q(x)", s=0.2)
+        ax[0].set_yscale("log")
+        ax[0].set_xscale("log")
+        ax[0].legend()
 
-    fig, ax = plt.subplots(ncols=2, figsize=(8, 4))
-    ax[0].scatter(x, x, s=0.2, label="x")
-    ax[0].scatter(x, model.predict(x), label=f"Q(x) G={G:.3g}, LSB={lsb:.3g}", s=0.2)
-    ax[0].set_yscale("log")
-    ax[0].set_xscale("log")
-    ax[0].legend()
+        ax[1].plot(model.layers[0]._compute_bin_edges().numpy())
 
-    ax[1].plot(model.layers[0]._compute_bin_edges().numpy())
+        plt.savefig(os.path.join(output_dir, f"quantiser_test_{qlayer.name}.png"))
+        plt.close()
 
-    plt.savefig(os.path.join(output_dir, "quantiser_test.png"))
-    plt.close()
-
-    output_path = os.path.join(output_dir, "test_quantiser.keras")
-    model.save(output_path)
-    load_wp21_model(output_path)
+        output_path = os.path.join(output_dir, f"test_quantiser_{qlayer.name}.keras")
+        model.save(output_path)
+        load_wp21_model(output_path)
 
 
 def test_jet_calib():

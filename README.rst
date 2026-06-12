@@ -6,6 +6,8 @@ studies on Global.
 
 Built on Keras 3 and HGQ2.
 
+The package supports two generic event representations - images (B x eta x phi x layer) or vectors (B x num vectors x (pt, eta, phi, ...)).
+
 Installation
 ------------
 

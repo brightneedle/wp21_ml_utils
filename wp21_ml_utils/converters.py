@@ -52,14 +52,22 @@ class VectorsToImage(layers.Layer):
         self,
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
         phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
+        n_layers: int = None,
+        use_layers: bool = False,
         **kwargs
     ):
         super().__init__(**kwargs)
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
+        self.use_layers = use_layers
+        self.n_layers = n_layers
 
     def call(self, x):
-        pt, eta, phi = unpack_momenta(x[..., :3], keepdims=False)
+        if self.use_layers:
+            pt, eta, phi, layer = unpack_momenta(x[..., :4], keepdims=False)
+        else:
+            pt, eta, phi = unpack_momenta(x[..., :3], keepdims=False)
+            layer = None
 
         B = tf.shape(pt)[0]
         N = tf.shape(pt)[1]
@@ -85,21 +93,46 @@ class VectorsToImage(layers.Layer):
         batch_idx = tf.reshape(tf.range(B), (B, 1))
         batch_idx = tf.tile(batch_idx, (1, N))
 
-        indices = tf.stack(
-            [
-                tf.reshape(batch_idx, [-1]),
-                tf.reshape(eta_bin, [-1]),
-                tf.reshape(phi_bin, [-1]),
-            ],
-            axis=1,
-        )
+        if layer is not None:
+            # ensure integer type
+            layer = tf.cast(layer, tf.int32)
+
+            layer = tf.reshape(layer, [-1])
+            layer = tf.reshape(layer, [B, N])
+
+            layer = tf.where(valid, layer, 0)
+
+            indices = tf.stack(
+                [
+                    tf.reshape(batch_idx, [-1]),
+                    tf.reshape(eta_bin, [-1]),
+                    tf.reshape(phi_bin, [-1]),
+                    tf.reshape(layer, [-1]),
+                ],
+                axis=1,
+            )
+
+            out_shape = (B, n_eta, n_phi, self.n_layers)
+
+        else:
+            indices = tf.stack(
+                [
+                    tf.reshape(batch_idx, [-1]),
+                    tf.reshape(eta_bin, [-1]),
+                    tf.reshape(phi_bin, [-1]),
+                ],
+                axis=1,
+            )
+
+            out_shape = (B, n_eta, n_phi)
 
         updates = tf.reshape(pt, [-1])
 
-        towers = tf.zeros((B, n_eta, n_phi), dtype=tf.float32)
+        towers = tf.zeros(out_shape, dtype=tf.float32)
         towers = tf.tensor_scatter_nd_add(towers, indices, updates)
 
-        towers = tf.expand_dims(towers, axis=-1)
+        if layer is None:
+            towers = tf.expand_dims(towers, axis=-1)
 
         return towers
 

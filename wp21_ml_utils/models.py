@@ -46,7 +46,7 @@ def load_wp21_model(path, custom_objects={}):
     return load_model(path, custom_objects=custom_objects)
 
 
-def PileUpCNN(
+def PileupCNN(
     input_shape: tuple[int],
     size: int = 3,
     depth_multiplier: int = 4,
@@ -122,7 +122,7 @@ def ConeJetAlgo(
     )(image)
 
     # mask cone sums
-    masked_cone_sums = tf.where(local_max_seed_mask, cone_sums, 0)
+    masked_cone_sums = ops.where(local_max_seed_mask, cone_sums, 0)
 
     # convert to 3-vectors
     jet_vectors = ImageToVectors(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
@@ -136,7 +136,7 @@ def JetEnergyResponseMLP(
     eps: float = 1e-3,
     name: str = "jet-calib",
     monotonic: bool = True,
-    n_jets: int = 10,
+    max_jets: int = 10,
 ):
     def get_layer(nodes, activation=None, monotonicity_indicator=None):
         if monotonic:
@@ -160,7 +160,7 @@ def JetEnergyResponseMLP(
                 activation=activation,
             )
 
-    momenta = Input(shape=(n_jets, 3))
+    momenta = Input(shape=(max_jets, 3))
 
     pt, eta, phi = unpack(momenta)
 

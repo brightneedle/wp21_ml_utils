@@ -22,9 +22,9 @@ def test_imports():
 
 def test_model_load():
     import os
-    from wp21_ml_utils.models import PileUpCNN, load_wp21_model
+    from wp21_ml_utils.models import PileupCNN, load_wp21_model
 
-    model = PileUpCNN((50, 64, 6), use_hgq=True)
+    model = PileupCNN((50, 64, 6), use_hgq=True)
 
     output_path = os.path.join(output_dir, "test_qcnn.keras")
     model.save(output_path)
@@ -69,9 +69,6 @@ def test_jet_calib():
     from wp21_ml_utils.models import JetEnergyResponseMLP, load_wp21_model
     from wp21_ml_utils.losses import CalibrationLoss
 
-    model = JetEnergyResponseMLP(n_jets=1)
-    model.compile(loss=CalibrationLoss(), optimizer="adam")
-
     pt = np.random.uniform(0, 2 * np.pi, size=(10000, 1))
     eta = np.random.uniform(-2.5, 2.5, size=pt.shape)
     phi = np.random.uniform(-np.pi, np.pi, size=pt.shape)
@@ -79,6 +76,8 @@ def test_jet_calib():
     inputs = np.stack([pt, eta, phi], axis=-1)
     targets = np.stack([pt + np.sin(pt), eta, phi], axis=-1)
 
+    model = JetEnergyResponseMLP(max_jets=inputs.shape[1])
+    model.compile(loss=CalibrationLoss(), optimizer="adam")
     model.fit(inputs, targets, batch_size=32, epochs=10)
 
     plt.figure(figsize=(4, 4))

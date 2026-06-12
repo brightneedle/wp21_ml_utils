@@ -59,7 +59,7 @@ class VectorsToImage(layers.Layer):
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
 
     def call(self, x):
-        pt, eta, phi = unpack_momenta(x, expand=False)
+        pt, eta, phi = unpack_momenta(x[..., :3], keepdims=False)
 
         B = tf.shape(pt)[0]
         N = tf.shape(pt)[1]

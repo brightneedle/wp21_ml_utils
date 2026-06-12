@@ -4,11 +4,10 @@ from tensorflow.keras.layers import Dense
 from hgq.layers import QDense
 
 
-def unpack_momenta(momenta, expand=True):
-    x, y, z = ops.unstack(
-        ops.expand_dims(momenta, axis=-2) if expand else momenta, axis=-1
+def unpack_momenta(momenta, keepdims=True):
+    return ops.unstack(
+        ops.expand_dims(momenta, axis=-2) if keepdims else momenta, axis=-1
     )
-    return x, y, z
 
 
 def polar_to_cartesian(pt, eta, phi):

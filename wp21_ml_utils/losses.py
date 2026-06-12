@@ -6,8 +6,8 @@ from wp21_ml_utils.utils import unpack_momenta, polar_to_cartesian, transpose
 
 
 def masked_pairwise_distances(p_true, p_pred, pt_weight=1):
-    p_true = unpack_momenta(p_true)
-    p_pred = unpack_momenta(p_pred)
+    p_true = unpack_momenta(p_true[..., :3])
+    p_pred = unpack_momenta(p_pred[..., :3])
 
     true_pt, pred_pt = p_true[0], p_pred[0]
 
@@ -57,7 +57,7 @@ def chamfer_distance(
         )
 
     if normalise:
-        true_px, true_py, true_pz = polar_to_cartesian(*unpack_momenta(y_true))
+        true_px, true_py, true_pz = polar_to_cartesian(*unpack_momenta(y_true[..., :3]))
         p_true_mag_sq = (
             tf.square(true_px) + tf.square(true_py) + tf.square(true_pz) + 1e-12
         )
@@ -188,8 +188,8 @@ class CalibrationLoss(losses.Loss):
         self.normalise = normalise
 
     def call(self, y_true, y_pred):
-        pt_true, eta_true, phi_true = unpack_momenta(y_true)
-        pt_pred, eta_pred, phi_pred = unpack_momenta(y_pred)
+        pt_true, eta_true, phi_true = unpack_momenta(y_true[..., :3])
+        pt_pred, eta_pred, phi_pred = unpack_momenta(y_pred[..., :3])
 
         dpt = tf.abs(pt_true - transpose(pt_pred))
 

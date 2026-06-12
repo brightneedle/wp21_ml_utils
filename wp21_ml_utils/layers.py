@@ -296,17 +296,19 @@ class LocalMaxMask(layers.Layer):
 
 
 class NthLeadingPt(layers.Layer):
-    def __init__(self, jet_idx: int, **kwargs):
+    def __init__(self, index: int, **kwargs):
         super().__init__(**kwargs)
-        self.jet_idx = jet_idx
+        self.index = index
 
     def call(self, jets):
-        return jets[:, self.jet_idx, 0, None]
+        pt = jets[..., 0]
+        sorted_pt = tf.sort(pt, axis=-1, direction="DESCENDING")
+        return sorted_pt[:, self.index, None]
 
     def get_config(self):
         return {
             **super().get_config(),
-            "jet_idx": self.jet_idx,
+            "index": self.index,
         }
 
 

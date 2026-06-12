@@ -18,31 +18,61 @@ set_image_data_format("channels_last")
 
 
 class SymmetricPooling(layers.Layer):
-    def __init__(self, size: int, input_channels: int):
+    def __init__(self, size: int):
         super().__init__()
+
         if size % 2 != 1:
             raise ValueError("size must be odd integer")
 
-        centre = size // 2
-        n_features = (centre + 1) ** 2  #
-        k = np.zeros((size, size, 1, n_features), dtype=np.float32)
+        self.size = size
+
+    def build(self, input_shape):
+        input_channels = input_shape[-1]
+
+        centre = self.size // 2
+        n_features = (centre + 1) ** 2
+
+        k = np.zeros(
+            (self.size, self.size, 1, n_features),
+            dtype=np.float32,
+        )
+
         feature_idx = 0
         for eta_idx in range(centre + 1):
             for phi_idx in range(centre + 1):
                 for i, j in itertools.product(
-                    [eta_idx, size - 1 - eta_idx], [phi_idx, size - 1 - phi_idx]
+                    [eta_idx, self.size - 1 - eta_idx],
+                    [phi_idx, self.size - 1 - phi_idx],
                 ):
-                    k[i, j, :, feature_idx] = 1
+                    k[i, j, :, feature_idx] = 1.0
                 feature_idx += 1
 
         assert feature_idx == n_features
 
-        self.kernel = tf.constant(np.repeat(k, input_channels, axis=2))
+        kernel = np.repeat(k, input_channels, axis=2)
+
+        # IMPORTANT: register as Keras weight (not tf.constant)
+        self.kernel = self.add_weight(
+            name="kernel",
+            shape=kernel.shape,
+            initializer=tf.constant_initializer(kernel),
+            trainable=False,
+        )
+
+        super().build(input_shape)
 
     def call(self, inputs):
         return tf.nn.depthwise_conv2d(
-            inputs, self.kernel, strides=[1] * 4, padding="VALID"
+            inputs,
+            self.kernel,
+            strides=[1, 1, 1, 1],
+            padding="VALID",
         )
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"size": self.size})
+        return config
 
 
 class SymmetricDepthwiseConv2D(layers.Layer):
@@ -50,7 +80,6 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         self,
         kernel_size: int,
         depth_multiplier: int,
-        input_channels: int = 6,
         activation: str = None,
         use_hgq: bool = False,
         **kwargs,
@@ -58,15 +87,14 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         super().__init__()
 
         self.kernel_size = kernel_size
-        self.input_channels = input_channels
         self.depth_multiplier = depth_multiplier
         self.activation = activation
         self.use_hgq = use_hgq
 
     def build(self, input_shape):
-        self.pooling = SymmetricPooling(
-            size=self.kernel_size, input_channels=self.input_channels
-        )
+        self.input_channels = int(input_shape[-1])
+
+        self.pooling = SymmetricPooling(size=self.kernel_size)
 
         self.dense_layers = [
             init_dense_layer(
@@ -84,7 +112,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
             dense_layer(x)
             for dense_layer, x in zip(self.dense_layers, pooled_inputs_by_layer)
         ]
-        outputs = layers.Concatenate()(pooled_inputs_by_layer)
+        outputs = tf.concat(pooled_inputs_by_layer, axis=-1)
         return outputs
 
     def get_config(self):
@@ -93,7 +121,6 @@ class SymmetricDepthwiseConv2D(layers.Layer):
             {
                 "kernel_size": self.kernel_size,
                 "depth_multiplier": self.depth_multiplier,
-                "input_channels": self.input_channels,
                 "activation": self.activation,
                 "use_hgq": self.use_hgq,
             }
@@ -336,7 +363,7 @@ class MonoDense(layers.Dense):
         units: int,
         *,
         activation: Optional[Union[str, Callable]] = None,
-        monotonicity_indicator=None,
+        monotonicity_indicator: Union[int, list] = 0,
         is_convex: bool = False,
         is_concave: bool = False,
         activation_weights: Tuple[float, float, float] = (7.0, 7.0, 2.0),
@@ -344,8 +371,12 @@ class MonoDense(layers.Dense):
     ):
         super().__init__(units=units, activation=None, **kwargs)
 
+        if hasattr(monotonicity_indicator, "__len__"):
+            self.monotonicity_indicator = list(monotonicity_indicator)
+        else:
+            self.monotonicity_indicator = float(monotonicity_indicator)
+
         self.org_activation = activation
-        self.monotonicity_indicator = monotonicity_indicator
         self.is_convex = is_convex
         self.is_concave = is_concave
         self.activation_weights = activation_weights
@@ -371,17 +402,12 @@ class MonoDense(layers.Dense):
     def build(self, input_shape):
         super().build(input_shape)
 
-        # Normalize monotonicity indicator
-        if self.monotonicity_indicator is None:
-            self.monotonicity_indicator = tf.zeros((input_shape[-1], 1))
+        if isinstance(self.monotonicity_indicator, float):
+            mi = np.full(input_shape[-1], self.monotonicity_indicator, dtype=np.float32)
         else:
-            mi = tf.convert_to_tensor(self.monotonicity_indicator, dtype=tf.float32)
-            mi = tf.reshape(mi, (-1, 1))
-            if not tf.reduce_all(
-                tf.reduce_any(tf.equal(mi, [-1.0, 0.0, 1.0]), axis=-1)
-            ):
-                raise ValueError("monotonicity_indicator must be -1, 0, or 1")
-            self.monotonicity_indicator = mi
+            mi = np.asarray(self.monotonicity_indicator, dtype=np.float32)
+
+        self.mi = tf.constant(mi.reshape(-1, 1), dtype=tf.float32)
 
         # Activations
         self.convex_activation = activations.get(self.org_activation)
@@ -402,13 +428,16 @@ class MonoDense(layers.Dense):
 
         self.saturated_activation = saturated
 
-        # Precompute activation split sizes
-        w = tf.constant(self.activation_weights, dtype=tf.float32)
-        w = w / tf.reduce_sum(w)
+        w = np.array(self.activation_weights, dtype=np.float32)
+        w = w / np.sum(w)
 
-        self._s_convex = tf.cast(tf.round(w[0] * self.units), tf.int32)
-        self._s_concave = tf.cast(tf.round(w[1] * self.units), tf.int32)
-        self._s_saturated = self.units - self._s_convex - self._s_concave
+        s_convex = int(np.round(w[0] * self.units))
+        s_concave = int(np.round(w[1] * self.units))
+        s_saturated = self.units - s_convex - s_concave
+
+        self._s_convex = s_convex
+        self._s_concave = s_concave
+        self._s_saturated = s_saturated
 
     def _apply_monotonicity(self, kernel: tf.Tensor) -> tf.Tensor:
         abs_kernel = tf.abs(kernel)
@@ -428,9 +457,7 @@ class MonoDense(layers.Dense):
         )
 
         y_c = self.convex_activation(x_c)
-
         y_n = self.concave_activation(x_n)
-
         y_s = self.saturated_activation(x_s)
 
         return tf.concat([y_c, y_n, y_s], axis=-1)
@@ -453,7 +480,7 @@ class MonoDense(layers.Dense):
         config.update(
             {
                 "activation": self.org_activation,
-                "monotonicity_indicator": self.monotonicity_indicator.numpy().tolist(),
+                "monotonicity_indicator": self.monotonicity_indicator,
                 "is_convex": self.is_convex,
                 "is_concave": self.is_concave,
                 "activation_weights": self.activation_weights,

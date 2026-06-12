@@ -52,8 +52,9 @@ class VectorsToImage(layers.Layer):
         self,
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
         phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
+        **kwargs
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
 
@@ -105,6 +106,6 @@ class VectorsToImage(layers.Layer):
     def get_config(self):
         return {
             **super().get_config(),
-            "eta_edges": self.eta_edges,
-            "phi_edges": self.phi_edges,
+            "eta_edges": self.eta_edges.numpy().tolist(),
+            "phi_edges": self.phi_edges.numpy().tolist(),
         }

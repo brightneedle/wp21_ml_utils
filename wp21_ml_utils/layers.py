@@ -18,8 +18,8 @@ set_image_data_format("channels_last")
 
 
 class SymmetricPooling(layers.Layer):
-    def __init__(self, size: int):
-        super().__init__()
+    def __init__(self, size: int, **kwargs):
+        super().__init__(**kwargs)
 
         if size % 2 != 1:
             raise ValueError("size must be odd integer")
@@ -84,7 +84,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         use_hgq: bool = False,
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
 
         self.kernel_size = kernel_size
         self.depth_multiplier = depth_multiplier
@@ -104,6 +104,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
             )
             for _ in range(self.input_channels)
         ]
+        super().build(input_shape)
 
     def call(self, inputs):
         pooled_inputs = self.pooling(inputs)
@@ -210,7 +211,7 @@ class SlidingConeSum(layers.Layer):
         kernel = np.ones((self.kernel_size, self.kernel_size), dtype=np.float32)
 
         if self.shape == "square":
-            return tf.convert_to_tensor(kernel[:, :, None, None])
+            return tf.convert_to_tensor(kernel[:, :, None, None], dtype=self.dtype)
 
         elif self.shape == "circle":
             eta_idxs, phi_idxs = np.indices((self.kernel_size, self.kernel_size))
@@ -218,42 +219,56 @@ class SlidingConeSum(layers.Layer):
             dphi = phi_idxs - self.kernel_size // 2
             mask = (deta**2 + dphi**2) <= radius**2
             kernel = np.where(mask, kernel, 0)
-            return tf.convert_to_tensor(kernel[:, :, None, None])
+            return tf.convert_to_tensor(kernel[:, :, None, None], dtype=self.dtype)
         else:
             raise ValueError("Shape must be 'square' or 'circle'")
 
+    def build(self, input_shape):
+        if len(input_shape) != 4:
+            raise ValueError(f"Expected 4D input (B, H, W, C), got {input_shape}")
 
-class CircularMaxPool(layers.Layer):
+        self.input_channels = input_shape[-1]
+        self.pad.build(input_shape)
+        super().build(input_shape)
+
+
+class CircularMaxPool(tf.keras.layers.Layer):
     def __init__(self, kernel_size: int, **kwargs):
         super().__init__(**kwargs)
         self.kernel_size = kernel_size
 
         radius = kernel_size // 2
 
-        # build circular filter
         yy, xx = np.indices((kernel_size, kernel_size))
         yy -= radius
         xx -= radius
         circle = (xx**2 + yy**2) <= radius**2
 
         filt = np.where(circle, 0.0, -1e9).astype(np.float32)
-        self.filter = tf.constant(filt[:, :, None])
+        self.filter = tf.constant(filt[None, :, :, None])  # [1, k, k, 1]
 
     def call(self, x):
-        return tf.nn.dilation2d(
-            x,
-            self.filter,
+        k = self.kernel_size
+
+        patches = tf.image.extract_patches(
+            images=x,
+            sizes=[1, k, k, 1],
             strides=[1, 1, 1, 1],
+            rates=[1, 1, 1, 1],
             padding="VALID",
-            data_format="NHWC",
-            dilations=[1, 1, 1, 1],
+        )  # [B, H, W, k*k*C]
+
+        b, h, w, c = tf.unstack(tf.shape(x))
+        c = x.shape[-1]
+
+        patches = tf.reshape(
+            patches,
+            [b, h - k + 1, w - k + 1, k, k, c],
         )
 
-    def get_config(self):
-        return {
-            **super().get_config(),
-            "kernel_size": self.kernel_size,
-        }
+        patches = patches + self.filter  # broadcasts over batch/spatial
+
+        return tf.reduce_max(patches, axis=[3, 4])
 
 
 class LocalMaxMask(layers.Layer):
@@ -276,7 +291,20 @@ class LocalMaxMask(layers.Layer):
             self.pool = CircularMaxPool(kernel_size)
 
         else:
-            raise ValueError(f"shape must be 'square' or 'circle', self.Got '{shape}'")
+            raise ValueError(f"shape must be 'square' or 'circle', got '{shape}'")
+
+    def build(self, input_shape):
+        if len(input_shape) != 4:
+            raise ValueError(f"Expected 4D input (B, H, W, C), got shape {input_shape}")
+
+        self.height = input_shape[1]
+        self.width = input_shape[2]
+        self.channels = input_shape[3]
+
+        self.pad.build(input_shape)
+        self.pool.build(input_shape)
+
+        super().build(input_shape)
 
     def call(self, image):
         # Add tiny epsilon for deterministic tie-breaking

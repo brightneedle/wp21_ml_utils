@@ -8,11 +8,23 @@ from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
 class ImageToVectors(layers.Layer):
-    def __init__(self, max_vectors: int = None, min_pt: float = 0, **kwargs):
+    def __init__(
+        self,
+        max_vectors: int = None,
+        min_pt: float = 0,
+        dphi: float = np.pi / 32,
+        deta: float = 0.1,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.max_vectors = max_vectors
         self.min_pt = min_pt
-        self.get_coords = TowerEtaPhiLayer()
+        self.dphi = dphi
+        self.deta = deta
+
+    def build(self, input_shape):
+        self.get_coords = TowerEtaPhiLayer(deta=self.deta, dphi=self.dphi)
+        super().build(input_shape)
 
     def call(self, image):
         B, E, P, _ = tf.unstack(tf.shape(image))
@@ -44,6 +56,8 @@ class ImageToVectors(layers.Layer):
             **super().get_config(),
             "max_vectors": self.max_vectors,
             "min_pt": self.min_pt,
+            "deta": self.deta,
+            "dphi": self.dphi,
         }
 
 
@@ -94,7 +108,6 @@ class VectorsToImage(layers.Layer):
         batch_idx = tf.tile(batch_idx, (1, N))
 
         if layer is not None:
-            # ensure integer type
             layer = tf.cast(layer, tf.int32)
 
             layer = tf.reshape(layer, [-1])

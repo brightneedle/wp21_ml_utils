@@ -1,108 +1,12 @@
 import os
 import matplotlib.pyplot as plt
 
-from tensorflow.keras import layers, Input, ops, Model
 
 plt.rcParams["figure.dpi"] = 150
 plt.rcParams["figure.constrained_layout.use"] = True
 
 output_dir = os.path.join("./test_outputs")
 os.makedirs(output_dir, exist_ok=True)
-
-
-def PileupCNN(
-    input_shape: tuple[int],
-    size: int = 3,
-    depth_multiplier: int = 4,
-    hidden_layer_sizes: list[int] = [32, 32],
-    use_hgq: bool = False,
-    init_as_layer_sum: bool = True,
-    with_abseta: bool = True,
-    push_max_to_unity: bool = False,
-    **kwargs,
-):
-    from wp21_ml_utils.layers import (
-        EtaPhiPadding,
-        SymmetricDepthwiseConv2D,
-        TowerEtaPhiLayer,
-    )
-    from wp21_ml_utils.regularisers import PushMaxWeightToUnity
-    from wp21_ml_utils.utils import init_dense_layer
-
-    inputs = Input(shape=input_shape)
-
-    x = EtaPhiPadding(size // 2)(inputs)
-    x = SymmetricDepthwiseConv2D(
-        kernel_size=size,
-        input_channels=input_shape[-1],
-        depth_multiplier=depth_multiplier,
-        use_hgq=use_hgq,
-        activation="relu",
-    )(x)
-
-    if with_abseta:
-        eta, _ = TowerEtaPhiLayer()(inputs)
-        log_abseta = ops.log(ops.abs(eta) + 1e-3)
-        x = layers.Concatenate(axis=-1)([x, log_abseta])
-
-    for layer_size in hidden_layer_sizes:
-        x = init_dense_layer(layer_size, activation="relu", use_hgq=use_hgq)(x)
-
-    w = init_dense_layer(
-        input_shape[-1],
-        activation="hard_sigmoid",
-        kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
-        bias_initializer="ones" if init_as_layer_sum else "zeros",
-        activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
-        use_hgq=use_hgq,
-    )(x)
-
-    outputs = layers.Multiply()([w, inputs])
-
-    model = Model(
-        inputs=inputs,
-        outputs=outputs,
-        **kwargs,
-    )
-
-    return model
-
-
-def ConeJetAlgo(
-    input_shape: tuple[int],
-    kernel_size: int = 9,
-    min_pt: float = 0,
-    max_jets: int = 20,
-    shape: str = "circle",
-    radius: float = None,
-    layer_name: str = "cone-layer",
-):
-    from wp21_ml_utils.converters import ImageToVectors
-    from wp21_ml_utils.layers import SlidingConeSum, LocalMaxMask
-
-    image = Input(shape=input_shape)
-
-    cone_sums = SlidingConeSum(
-        kernel_size=kernel_size,
-        shape=shape,
-        radius=radius,
-        name="cone_sum",
-    )(image)
-
-    # get good seed mask
-    local_max_seed_mask = LocalMaxMask(
-        kernel_size=kernel_size,
-        shape=shape,
-        name="local_max",
-    )(image)
-
-    # mask cone sums
-    masked_cone_sums = ops.where(local_max_seed_mask, cone_sums, 0)
-
-    # convert to 3-vectors
-    jet_vectors = ImageToVectors(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
-
-    return Model(inputs=image, outputs=jet_vectors, name=layer_name)
 
 
 def test_imports():
@@ -117,10 +21,17 @@ def test_imports():
         importlib.import_module(module_name)
 
 
-def test_model_load():
+def test_pucnn():
+    import numpy as np
     from wp21_ml_utils.models import load_wp21_model
+    from wp21_ml_utils.examples import PileupCNN
 
-    model = PileupCNN((50, 64, 6), use_hgq=True)
+    x = np.random.normal(size=(128, 50, 64, 6))
+    model = PileupCNN((50, 64, 6), use_hgq=True, init_as_layer_sum=True)
+    y = model(x)
+
+    np.testing.assert_equal(x.shape, y.shape)
+    np.testing.assert_allclose(x, y)
 
     output_path = os.path.join(output_dir, "test_qcnn.keras")
     model.save(output_path)
@@ -182,7 +93,8 @@ def test_mono_dense():
 
     y_pred = model.predict(x)
     rank_coeff = spearmanr(x, y_pred, axis=None).statistic
-    assert np.isclose(rank_coeff, 1)
+
+    np.testing.assert_allclose(rank_coeff, 1)
 
     plt.figure(figsize=(4, 4))
     plt.scatter(x, y, s=0.1, label="True")
@@ -194,3 +106,95 @@ def test_mono_dense():
     output_path = os.path.join(output_dir, "monodense_mlp.keras")
     model.save(output_path)
     load_wp21_model(output_path)
+
+
+def test_cone_jets():
+    import numpy as np
+    from wp21_ml_utils.models import load_wp21_model
+    from wp21_ml_utils.examples import ConeJets
+
+    model = ConeJets(
+        input_shape=(9, 9, 1),
+        kernel_size=3,
+        max_jets=2,
+        min_pt=0,
+    )
+
+    x = np.zeros((1, 9, 9, 1), dtype=np.float32)
+
+    x[0, 2, 2, 0] = 5.0
+    x[0, 6, 6, 0] = 10.0
+
+    jets = model.predict(x, verbose=0)
+
+    assert jets[0, 0, 0] >= jets[0, 1, 0]
+
+    np.testing.assert_allclose(jets[0, :, 0], [10.0, 5.0])
+
+    output_path = os.path.join(output_dir, "test_cone.keras")
+    model.save(output_path)
+    load_wp21_model(output_path)
+
+
+def test_towers():
+    import numpy as np
+    from wp21_ml_utils.converters import VectorsToImage
+
+    layer = VectorsToImage(
+        eta_edges=np.array([-1.0, 0.0, 1.0], dtype=np.float32),
+        phi_edges=np.array([-np.pi, 0.0, np.pi], dtype=np.float32),
+        n_layers=6,
+        use_layers=True,
+    )
+
+    x = np.asarray(
+        [
+            [
+                [1.0, -0.5, -1.0, 0],
+                [2.0, 0.5, 1.0, 3],
+                [4.0, 0.5, 1.0, 3],
+            ]
+        ]
+    )
+
+    out = layer(x).numpy()
+
+    # Expected shape: (1, 2, 2, 6)
+    expected = np.zeros((1, 2, 2, 6), dtype=np.float32)
+    expected[0, 0, 0, 0] = 1.0
+    expected[0, 1, 1, 3] = 6.0
+
+    np.testing.assert_allclose(out, expected)
+
+    fig, ax = plt.subplots(ncols=2, figsize=(8, 4))
+    ax[0].matshow(expected[0].sum(axis=-1))
+    ax[1].matshow(out[0].sum(axis=-1))
+
+    plt.savefig(os.path.join(output_dir, "tower_test.png"))
+    plt.close()
+
+
+def test_converters():
+    import numpy as np
+    from wp21_ml_utils.converters import VectorsToImage, ImageToVectors
+
+    x = np.asarray(
+        [
+            [
+                [4.0, -0.5, -np.pi / 2],
+                [2.0, 0.5, np.pi / 2],
+                [1.0, 0.5, -np.pi / 2],
+            ]
+        ]
+    )
+
+    vector2image = VectorsToImage(
+        eta_edges=np.array([-1.0, 0.0, 1.0], dtype=np.float32),
+        phi_edges=np.array([-np.pi, 0.0, np.pi], dtype=np.float32),
+    )
+    image2vector = ImageToVectors(deta=1.0, dphi=np.pi, max_vectors=x.shape[1])
+
+    y = image2vector(vector2image(x))
+
+    np.testing.assert_equal(x.shape, y.shape)
+    np.testing.assert_allclose(x, y)

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import losses
+from tensorflow.keras.losses import Loss
 import numpy as np
 
 from wp21_ml_utils.utils import unpack_momenta, polar_to_cartesian, transpose
@@ -86,7 +86,7 @@ def chamfer_distance(
     return tf.reduce_mean(loss_per_example) if reduce_mean else loss_per_example
 
 
-class ChamferLoss(losses.Loss):
+class ChamferLoss(Loss):
     def __init__(
         self,
         squared=True,
@@ -128,7 +128,7 @@ class ChamferLoss(losses.Loss):
         return {**base_config, **config}
 
 
-class SparsityLoss(losses.Loss):
+class SparsityLoss(Loss):
     def __init__(
         self,
         fmax: float,
@@ -178,7 +178,7 @@ class SparsityLoss(losses.Loss):
         }
 
 
-class CalibrationLoss(losses.Loss):
+class CalibrationLoss(Loss):
     def __init__(
         self, max_dR=0.3, squared=True, normalise=False, name="calib_loss", **kwargs
     ):
@@ -226,3 +226,17 @@ class CalibrationLoss(losses.Loss):
             "squared": self.squared,
             "normalise": self.normalise,
         }
+
+
+class PinballLoss(Loss):
+    def __init__(self, target_quantile: float, **kwargs):
+        super().__init__(**kwargs)
+        self.target_quantile = target_quantile
+
+    def call(self, y_true, y_pred):
+        err = y_true - y_pred
+        loss = tf.maximum(self.target_quantile * err, (self.target_quantile - 1) * err)
+        return tf.reduce_mean(loss, axis=-1)
+
+    def get_config(self):
+        return {**super().get_config(), "target_quantile": self.target_quantile}

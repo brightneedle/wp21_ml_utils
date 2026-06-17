@@ -78,8 +78,8 @@ def cartesian_to_polar(px: tf.Tensor, py: tf.Tensor, pz: tf.Tensor) -> tuple[tf.
         Polar momentum coordinates (pT, η, φ).
     """
     pt = ops.sqrt(ops.square(px) + ops.square(py))
-    eta = pt * ops.arcsinh(pz / ops.minimum(pt, 1e-12))
-    phi = pt * ops.arctan2(py, px)
+    eta = ops.arcsinh(pz / ops.maximum(pt, 1e-12))
+    phi = ops.arctan2(py, px)
     return pt, eta, phi
 
 

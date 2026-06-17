@@ -44,12 +44,12 @@ def test_pucnn():
         np.testing.assert_equal(x.shape, y.shape)
         np.testing.assert_allclose(x, y)
 
-        model.compile(loss="mse", optimizer="adam")
-        model.evaluate(x, x, verbose=0)
-
         output_path = os.path.join(output_dir, "test_qcnn.keras")
         model.save(output_path)
         load_wp21_model(output_path)
+
+        model.compile(loss="mse", optimizer="adam")
+        model.evaluate(x, x, verbose=0)
 
 
 def test_quantisers():
@@ -212,3 +212,27 @@ def test_converters():
 
     np.testing.assert_equal(x.shape, y.shape)
     np.testing.assert_allclose(x, y)
+
+
+def test_coordinates():
+    import numpy as np
+    from wp21_ml_utils.utils import (
+        unpack_momenta,
+        polar_to_cartesian,
+        cartesian_to_polar,
+    )
+
+    np.random.seed(42)
+
+    px, py, pz = unpack_momenta(np.random.normal(size=(128, 10, 3)))
+
+    pt, eta, phi = cartesian_to_polar(px, py, pz)
+
+    px_, py_, pz_ = polar_to_cartesian(pt, eta, phi)
+
+    np.testing.assert_allclose(
+        (px, py, pz),
+        (px_, py_, pz_),
+        rtol=1e-5,
+        atol=1e-6,
+    )

@@ -25,17 +25,31 @@ def test_pucnn():
     import numpy as np
     from wp21_ml_utils.models import load_wp21_model
     from wp21_ml_utils.examples import PileupCNN
+    from wp21_ml_utils.regularisers import PushMaxWeightToUnity, SparsityPenalty
+
+    strength = 1e-3
 
     x = np.random.normal(size=(128, 50, 64, 6))
-    model = PileupCNN((50, 64, 6), use_hgq=True, init_as_layer_sum=True)
-    y = model(x)
 
-    np.testing.assert_equal(x.shape, y.shape)
-    np.testing.assert_allclose(x, y)
+    for regulariser in [PushMaxWeightToUnity(strength), SparsityPenalty(strength)]:
+        model = PileupCNN(
+            (50, 64, 6),
+            use_hgq=True,
+            init_as_layer_sum=True,
+            push_max_to_unity=True,
+            weight_regulariser=regulariser,
+        )
+        y = model(x)
 
-    output_path = os.path.join(output_dir, "test_qcnn.keras")
-    model.save(output_path)
-    load_wp21_model(output_path)
+        np.testing.assert_equal(x.shape, y.shape)
+        np.testing.assert_allclose(x, y)
+
+        model.compile(loss="mse", optimizer="adam")
+        model.evaluate(x, x, verbose=0)
+
+        output_path = os.path.join(output_dir, "test_qcnn.keras")
+        model.save(output_path)
+        load_wp21_model(output_path)
 
 
 def test_quantisers():

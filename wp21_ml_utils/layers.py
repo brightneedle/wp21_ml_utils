@@ -18,6 +18,28 @@ set_image_data_format("channels_last")
 
 
 class SymmetricPooling(layers.Layer):
+    """
+    Symmetry-aware pooling layer.
+
+    Groups pixels that are equivalent under η–φ reflection symmetries within
+    a square kernel and sums them into a reduced feature representation.
+
+    This produces a fixed set of symmetry-invariant features which can be
+    processed by subsequent dense layers.
+
+    Input:
+        Tensor of shape (B, H, W, C)
+
+    Output:
+        Tensor of shape
+        (B, H-k+1, W-k+1, C * ((k//2)+1)^2)
+
+    Parameters
+    ----------
+    size : int
+        Odd kernel size defining the symmetry neighbourhood.
+    """
+
     def __init__(self, size: int, **kwargs):
         super().__init__(**kwargs)
 
@@ -51,7 +73,6 @@ class SymmetricPooling(layers.Layer):
 
         kernel = np.repeat(k, input_channels, axis=2)
 
-        # IMPORTANT: register as Keras weight (not tf.constant)
         self.kernel = self.add_weight(
             name="kernel",
             shape=kernel.shape,
@@ -61,7 +82,7 @@ class SymmetricPooling(layers.Layer):
 
         super().build(input_shape)
 
-    def call(self, inputs):
+    def call(self, inputs: TensorLike) -> tf.Tensor:
         return tf.nn.depthwise_conv2d(
             inputs,
             self.kernel,
@@ -76,6 +97,35 @@ class SymmetricPooling(layers.Layer):
 
 
 class SymmetricDepthwiseConv2D(layers.Layer):
+    """
+    Symmetry-constrained depthwise convolution.
+
+    Performs SymmetricPooling independently for each input channel and then
+    applies a channel-specific dense transformation. This provides a learned
+    convolution-like operation while preserving reflection symmetries of the
+    η–φ neighbourhood.
+
+    Input:
+        (B, H, W, C)
+
+    Output:
+        (B, H-k+1, W-k+1, C * depth_multiplier)
+
+    Parameters
+    ----------
+    kernel_size : int
+        Size of the symmetric neighbourhood.
+
+    depth_multiplier : int
+        Number of output features produced per input channel.
+
+    activation : str, optional
+        Activation applied inside the per-channel dense projection.
+
+    use_hgq : bool, default=False
+        Enables HGQ-compatible dense layers when available.
+    """
+
     def __init__(
         self,
         kernel_size: int,
@@ -106,8 +156,8 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         ]
         super().build(input_shape)
 
-    def call(self, inputs):
-        pooled_inputs = self.pooling(inputs)
+    def call(self, image: TensorLike) -> tf.Tensor:
+        pooled_inputs = self.pooling(image)
         pooled_inputs_by_layer = tf.split(pooled_inputs, self.input_channels, axis=-1)
         pooled_inputs_by_layer = [
             dense_layer(x)
@@ -130,23 +180,45 @@ class SymmetricDepthwiseConv2D(layers.Layer):
 
 
 class EtaPhiPadding(layers.Layer):
+    """
+    Detector-aware η–φ padding.
+
+    Applies:
+      - cyclic padding in φ (periodic detector coordinate)
+      - zero padding in η (non-periodic detector coordinate)
+
+    This reproduces the topology commonly used in calorimeter image
+    representations.
+
+    Input:
+        (B, E, P, C)
+
+    Output:
+        (B, E+2p, P+2p, C)
+
+    Parameters
+    ----------
+    pad_size : int
+        Number of cells added on each side.
+    """
+
     def __init__(self, pad_size, **kwargs):
         super().__init__(**kwargs)
         self.pad_size = pad_size
 
-    def cyclic_padding_at_axis(self, x, axis=2):
+    def cyclic_padding_at_axis(self, x: TensorLike, axis: int = 2) -> TensorLike:
         length = tf.shape(x)[axis]
         pad_before = tf.gather(x, tf.range(length - self.pad_size, length), axis=axis)
         pad_after = tf.gather(x, tf.range(0, self.pad_size), axis=axis)
         return tf.concat([pad_before, x, pad_after], axis=axis)
 
-    def zero_padding_at_axis(self, x, axis=1):
+    def zero_padding_at_axis(self, x: TensorLike, axis: int = 1):
         rank = len(x.shape)
         paddings = [[0, 0]] * rank
         paddings[axis] = [self.pad_size, self.pad_size]
         return tf.pad(x, paddings, mode="CONSTANT", constant_values=0)
 
-    def call(self, x):
+    def call(self, x: TensorLike) -> tf.Tensor:
         return self.zero_padding_at_axis(self.cyclic_padding_at_axis(x))
 
     def get_config(self):
@@ -154,12 +226,34 @@ class EtaPhiPadding(layers.Layer):
 
 
 class TowerEtaPhiLayer(layers.Layer):
+    """
+    Generates η and φ coordinate maps for calorimeter images.
+
+    Converts image indices into physical η and φ coordinates and returns
+    coordinate tensors aligned with the input image grid.
+
+    Input:
+        Image tensor of shape (B, E, P, C)
+
+    Output:
+        Tuple[eta, phi]
+        Each of shape (B, E, P, 1)
+
+    Parameters
+    ----------
+    deta : float
+        η bin width.
+
+    dphi : float
+        φ bin width.
+    """
+
     def __init__(self, deta: float = 0.1, dphi: float = np.pi / 32, **kwargs):
         super().__init__(**kwargs)
         self.deta = deta
         self.dphi = dphi
 
-    def call(self, image):
+    def call(self, image: TensorLike) -> tf.Tensor:
         B, E, P, _ = tf.unstack(tf.shape(image))
 
         eta_idxs = tf.tile(tf.reshape(tf.range(E), (1, E, 1, 1)), (B, 1, P, 1))
@@ -175,6 +269,31 @@ class TowerEtaPhiLayer(layers.Layer):
 
 
 class SlidingConeSum(layers.Layer):
+    """
+    Sliding-window energy sum.
+
+    Computes the sum of values within a circular or square neighbourhood
+    centred on every pixel. Frequently used to emulate cone-based jet or
+    cluster energy accumulation.
+
+    Input:
+        (B, H, W, C)
+
+    Output:
+        (B, H, W, 1)
+
+    Parameters
+    ----------
+    kernel_size : int
+        Size of the neighbourhood.
+
+    shape : {"circle", "square"}
+        Geometry of the accumulation region.
+
+    radius : int, optional
+        Radius used for circular masks.
+    """
+
     def __init__(
         self,
         kernel_size: int = 9,
@@ -191,8 +310,8 @@ class SlidingConeSum(layers.Layer):
         self.kernel = self.init_kernel()
         self.pad = EtaPhiPadding(pad_size=kernel_size // 2)
 
-    def call(self, x):
-        return tf.nn.conv2d(self.pad(x), self.kernel, strides=1, padding="VALID")
+    def call(self, image: TensorLike) -> tf.Tensor:
+        return tf.nn.conv2d(self.pad(image), self.kernel, strides=1, padding="VALID")
 
     def get_config(self):
         return {
@@ -233,6 +352,27 @@ class SlidingConeSum(layers.Layer):
 
 
 class CircularMaxPool(tf.keras.layers.Layer):
+    """
+    Circular max-pooling operator.
+
+    Computes the maximum value inside a circular neighbourhood while ignoring
+    pixels outside the circle.
+
+    Unlike standard MaxPool2D, the receptive field follows a disk-shaped
+    geometry.
+
+    Input:
+        (B, H, W, C)
+
+    Output:
+        (B, H-k+1, W-k+1, C)
+
+    Parameters
+    ----------
+    kernel_size : int
+        Diameter of the circular pooling region.
+    """
+
     def __init__(self, kernel_size: int, **kwargs):
         super().__init__(**kwargs)
         self.kernel_size = kernel_size
@@ -247,19 +387,18 @@ class CircularMaxPool(tf.keras.layers.Layer):
         filt = np.where(circle, 0.0, -1e9).astype(np.float32)
         self.filter = tf.constant(filt[None, :, :, None])  # [1, k, k, 1]
 
-    def call(self, x):
+    def call(self, image: TensorLike) -> tf.Tensor:
         k = self.kernel_size
 
         patches = tf.image.extract_patches(
-            images=x,
+            images=image,
             sizes=[1, k, k, 1],
             strides=[1, 1, 1, 1],
             rates=[1, 1, 1, 1],
             padding="VALID",
         )  # [B, H, W, k*k*C]
 
-        b, h, w, c = tf.unstack(tf.shape(x))
-        c = x.shape[-1]
+        b, h, w, c = tf.unstack(tf.shape(image))
 
         patches = tf.reshape(
             patches,
@@ -272,6 +411,30 @@ class CircularMaxPool(tf.keras.layers.Layer):
 
 
 class LocalMaxMask(layers.Layer):
+    """
+    Local-maximum detector.
+
+    Produces a boolean mask indicating whether each pixel is the maximum
+    within a local neighbourhood.
+
+    Supports both square and circular neighbourhood definitions and uses
+    a small random perturbation to break ties deterministically.
+
+    Input:
+        (B, H, W, C)
+
+    Output:
+        Boolean tensor of shape (B, H, W, C)
+
+    Parameters
+    ----------
+    kernel_size : int
+        Local neighbourhood size.
+
+    shape : {"square", "circle"}
+        Neighbourhood geometry.
+    """
+
     def __init__(self, kernel_size: int = 9, shape: str = "square", **kwargs):
         super().__init__(**kwargs)
         self.kernel_size = kernel_size
@@ -306,7 +469,7 @@ class LocalMaxMask(layers.Layer):
 
         super().build(input_shape)
 
-    def call(self, image):
+    def call(self, image: TensorLike) -> tf.Tensor:
         # Add tiny epsilon for deterministic tie-breaking
         eps = tf.random.uniform(
             tf.shape(image), minval=-1, maxval=1, seed=42, dtype=image.dtype
@@ -324,12 +487,30 @@ class LocalMaxMask(layers.Layer):
 
 
 class NthLeadingPt(layers.Layer):
+    """
+    Extracts the N-th highest transverse momentum.
+
+    Sorts jet constituents by pT and returns the specified rank.
+
+    Input:
+        Tensor containing momentum features where the first component
+        corresponds to pT.
+
+    Output:
+        (B, 1)
+
+    Parameters
+    ----------
+    index : int
+        Zero-based rank after sorting in descending pT order.
+    """
+
     def __init__(self, index: int, **kwargs):
         super().__init__(**kwargs)
         self.index = index
 
-    def call(self, jets):
-        pt = jets[..., 0]
+    def call(self, vectors: TensorLike) -> tf.Tensor:
+        pt = vectors[..., 0]
         sorted_pt = tf.sort(pt, axis=-1, direction="DESCENDING")
         return sorted_pt[:, self.index, None]
 
@@ -341,6 +522,30 @@ class NthLeadingPt(layers.Layer):
 
 
 class VectorSum(layers.Layer):
+    """
+    Vectorial momentum summation.
+
+    Sums constituent momentum vectors and returns the total momentum in
+    either Cartesian or polar coordinates.
+
+    Supports automatic conversion between coordinate systems before and
+    after summation.
+
+    Input:
+        (B, N, 3)
+
+    Output:
+        (B, 3)
+
+    Parameters
+    ----------
+    input : {"polar", "cartesian"}
+        Coordinate system of the inputs.
+
+    output : {"polar", "cartesian"}
+        Coordinate system of the returned vector sum.
+    """
+
     def __init__(self, input: str = "polar", output: str = "polar", **kwargs):
         super().__init__(**kwargs)
         self.input = input
@@ -356,8 +561,8 @@ class VectorSum(layers.Layer):
                 f"'output' must be 'polar' or 'cartesian', got '{self.output}'"
             )
 
-    def call(self, x):
-        components = unpack_momenta(x)
+    def call(self, vectors: TensorLike) -> tf.Tensor:
+        components = unpack_momenta(vectors)
         if self.input == "polar":
             px, py, pz = polar_to_cartesian(components)
         else:
@@ -377,21 +582,119 @@ class VectorSum(layers.Layer):
     def get_config(self):
         return {
             **super().get_config(),
-            "jet_idx": self.jet_idx,
+            "input": self.input,
+            "output": self.output,
         }
 
 
 class MonoDense(layers.Dense):
     """
-    Monotonic Dense Layer with:
-      - monotonicity constraints on weights
-      - optional convex/concave/saturated activation partitioning
+    Monotonic fully-connected layer.
+
+    Extends ``tf.keras.layers.Dense`` by enforcing sign constraints on selected
+    weights and by optionally partitioning the output units into convex,
+    concave, and saturated activation groups. The layer is designed for
+    constructing neural networks with provable monotonicity properties while
+    retaining expressive nonlinear behaviour.
+
+    Monotonicity
+    ------------
+    The ``monotonicity_indicator`` specifies how the output should depend on
+    each input feature:
+
+    * ``+1`` : monotonically increasing
+    * ``-1`` : monotonically decreasing
+    * ``0``  : unconstrained
+
+    During the forward pass, constrained weights are projected onto the
+    appropriate sign domain:
+
+    * increasing features use ``|w|``
+    * decreasing features use ``-|w|``
+    * unconstrained features use ``w``
+
+    This guarantees that the layer preserves the specified monotonic
+    relationship with respect to each constrained input dimension.
+
+    Activation Partitioning
+    -----------------------
+    When an activation function is specified, the output units are divided
+    into three groups:
+
+    1. Convex units
+       Apply the activation directly.
+
+    2. Concave units
+       Apply the reflected activation
+
+           f_concave(x) = -f(-x)
+
+    3. Saturated units
+       Combine convex and concave behaviour to produce a bounded,
+       saturation-like response.
+
+    The relative number of units assigned to each group is determined by
+    ``activation_weights``.
+
+    Convexity and Concavity
+    -----------------------
+    The layer supports architectures used in monotonic neural networks,
+    partially input-convex neural networks (PICNNs), and related constrained
+    function approximators.
+
+    By combining monotonic weight constraints with convex, concave, and
+    saturated activation components, the layer can represent rich nonlinear
+    monotone functions while maintaining interpretable shape constraints.
+
+    Parameters
+    ----------
+    units : int
+        Number of output units.
+
+    activation : str or callable, optional
+        Base activation function used to construct the convex, concave,
+        and saturated activation branches.
+
+    monotonicity_indicator : int or sequence of int, default=0
+        Monotonicity constraint for each input feature.
+
+        * +1 = increasing
+        * -1 = decreasing
+        *  0 = unconstrained
+
+        A scalar applies the same constraint to all inputs.
+
+    is_convex : bool, default=False
+        Marks the layer as belonging to a convex branch of a monotonic
+        architecture. Stored for configuration and model construction.
+
+    is_concave : bool, default=False
+        Marks the layer as belonging to a concave branch of a monotonic
+        architecture. Stored for configuration and model construction.
+
+    activation_weights : tuple(float, float, float),
+        default=(7.0, 7.0, 2.0)
+
+        Relative allocation of output units to
+
+        (convex, concave, saturated)
+
+        activation groups. The values are normalised internally before
+        determining the number of units assigned to each group.
+
+    Notes
+    -----
+    The layer applies monotonicity constraints only to the kernel weights.
+    Bias terms remain unconstrained.
+
+    The exact number of units assigned to each activation group is obtained
+    by rounding the normalised activation weights and assigning any remaining
+    units to the saturated group.
     """
 
     def __init__(
         self,
         units: int,
-        *,
         activation: Optional[Union[str, Callable]] = None,
         monotonicity_indicator: Union[int, list] = 0,
         is_convex: bool = False,
@@ -492,7 +795,7 @@ class MonoDense(layers.Dense):
 
         return tf.concat([y_c, y_n, y_s], axis=-1)
 
-    def call(self, inputs: TensorLike) -> TensorLike:
+    def call(self, inputs: TensorLike) -> tf.Tensor:
         kernel = self._apply_monotonicity(self.kernel)
 
         outputs = tf.linalg.matmul(inputs, kernel)

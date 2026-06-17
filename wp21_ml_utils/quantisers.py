@@ -1,18 +1,44 @@
 import tensorflow as tf
 from tensorflow.keras import initializers, layers
+from tensorflow.types.experimental import TensorLike
 
-from wp21_ml_utils.utils import softplus
+from wp21_ml_utils.utils import scaled_softplus
 
 
-class TrainableQuantiser(layers.Layer):
-    def __init__(self, T, **kwargs):
+class BaseQuantiser(layers.Layer):
+    """
+    Abstract base class for differentiable quantisation layers.
+
+    Maps continuous inputs onto a discrete set of quantisation levels using
+    nearest-neighbour assignment. During training, a soft approximation based
+    on temperature-scaled distances is used together with a straight-through
+    estimator (STE) to preserve gradient flow.
+
+    Subclasses define the quantisation levels by implementing
+    ``_compute_bin_edges()``.
+
+    Input:
+        Arbitrary tensor shape.
+
+    Output:
+        Tensor with the same shape as the input, where each value is mapped
+        to the nearest quantisation level.
+
+    Parameters
+    ----------
+    T : float
+        Temperature controlling the sharpness of the soft assignment used
+        during training. Larger values approach hard quantisation.
+    """
+
+    def __init__(self, T: float, **kwargs):
         super().__init__(**kwargs)
-        self.T = T
+        self.T = float(T)
 
-    def _compute_bin_edges(self):
+    def _compute_bin_edges(self) -> tf.Tensor:
         raise NotImplementedError()
 
-    def call(self, x, training=False):
+    def call(self, x: TensorLike, training: bool = False) -> tf.Tensor:
         x_shape = tf.shape(x)
         x_flat = tf.reshape(x, [-1])
 
@@ -38,7 +64,44 @@ class TrainableQuantiser(layers.Layer):
         return {**super().get_config(), "T": self.T}
 
 
-class QuadLinearQuantiser(TrainableQuantiser):
+class QuadLinearQuantiser(BaseQuantiser):
+    """
+    Piecewise-geometric quantiser with four dynamic ranges.
+
+    Constructs quantisation levels from four consecutive regions with
+    increasing bin widths:
+
+        lsb, lsb, G·lsb, G²·lsb, G³·lsb
+
+    where each region contains an equal number of quantisation steps.
+    This provides fine resolution near zero and progressively coarser
+    resolution at larger values.
+
+    Input:
+        Arbitrary tensor shape.
+
+    Output:
+        Tensor of identical shape with values mapped to the nearest
+        quantisation level.
+
+    Parameters
+    ----------
+    bits : int, default=6
+        Total quantiser bit width.
+
+    lsb : float, default=0.04
+        Width of the smallest quantisation step.
+
+    G : float, default=4.0
+        Geometric scaling factor between neighbouring dynamic ranges.
+
+    trainable : bool, default=False
+        If True, allows ``lsb`` and ``G`` to be optimised during training.
+
+    T : float, default=50
+        Temperature used for differentiable quantisation.
+    """
+
     def __init__(
         self,
         bits: int = 6,
@@ -69,6 +132,7 @@ class QuadLinearQuantiser(TrainableQuantiser):
             trainable=self.trainable,
             name=f"{self.name}_G",
         )
+        super().build(input_shape)
 
     def _compute_bin_edges(self):
         n = self.steps_per_range
@@ -93,7 +157,53 @@ class QuadLinearQuantiser(TrainableQuantiser):
         }
 
 
-class FlexibleQuantiser(TrainableQuantiser):
+class FlexibleQuantiser(BaseQuantiser):
+    """
+    Learnable non-uniform quantiser.
+
+    Defines a quantisation grid through trainable bin widths and optionally
+    trainable lower and upper range limits. Bin widths are normalised with
+    a softmax operation to ensure a valid ordered set of quantisation levels.
+
+    This layer can learn task-specific quantisation schemes while maintaining
+    differentiability through the straight-through estimator inherited from
+    ``BaseQuantiser``.
+
+    Input:
+        Arbitrary tensor shape.
+
+    Output:
+        Tensor of identical shape with values mapped to the nearest learned
+        quantisation level.
+
+    Parameters
+    ----------
+    bits : int
+        Quantiser bit width.
+
+    min_range : float, optional
+        Initial lower edge of the quantisation range.
+
+    max_range : float, optional
+        Initial upper edge of the quantisation range.
+
+    T : float, default=50
+        Temperature used for differentiable quantisation.
+
+    train_min_range : bool, default=False
+        Allows the lower range limit to be learned.
+
+    train_max_range : bool, default=False
+        Allows the overall quantisation range to be learned.
+
+    train_widths : bool, default=False
+        Allows the relative bin widths to be learned.
+
+    bin_smoothing : float, default=1e-2
+        Smoothing parameter reserved for regularisation of learned bin
+        widths.
+    """
+
     def __init__(
         self,
         bits: int,
@@ -103,7 +213,7 @@ class FlexibleQuantiser(TrainableQuantiser):
         train_min_range: bool = False,
         train_max_range: bool = False,
         train_widths: bool = False,
-        bin_regularisation: float = 1e-2,
+        bin_smoothing: float = 1e-3,
         **kwargs,
     ):
         super().__init__(T=T, **kwargs)
@@ -112,34 +222,39 @@ class FlexibleQuantiser(TrainableQuantiser):
         if max_range is None:
             max_range = 2 ** (bits / 2)
 
-        self.min_range = min_range
-        self.max_range = max_range
-        self.bits = bits
-        self.bin_regularisation = bin_regularisation
+        self.min_range = float(min_range)
+        self.max_range = float(max_range)
+        self.bits = int(bits)
+        self.bin_smoothing = float(bin_smoothing)
+        self.train_min_range = train_min_range
+        self.train_max_range = train_max_range
+        self.train_widths = train_widths
 
-        self.num_bins = 2**bits - 1
+        self.num_bins = 2**self.bits - 1
 
+    def build(self, input_shape):
         self.lower = self.add_weight(
             shape=[1],
             initializer=initializers.Constant(self.min_range),
-            trainable=train_min_range,
+            trainable=self.train_min_range,
             name=f"{self.name}_min_range",
         )
         self.range_scale = self.add_weight(
             shape=[1],
             initializer="zeros",
-            trainable=train_max_range,
+            trainable=self.train_max_range,
             name=f"{self.name}_range",
         )
         self.bin_widths = self.add_weight(
             shape=[self.num_bins],
             initializer="zeros",
-            trainable=train_widths,
+            trainable=self.train_widths,
             name=f"{self.name}_bin_widths",
         )
+        super().build(input_shape)
 
     def _compute_bin_edges(self):
-        range_scale = softplus(self.range_scale)
+        range_scale = scaled_softplus(self.range_scale)
         bin_widths = tf.nn.softmax(self.bin_widths)
 
         edges = tf.concat(
@@ -156,9 +271,9 @@ class FlexibleQuantiser(TrainableQuantiser):
             "bits": self.bits,
             "min_range": self.min_range,
             "max_range": self.max_range,
-            "train_min_range": self.lower.trainable,
-            "train_max_range": self.range_scale.trainable,
-            "train_widths": self.bin_widths.trainable,
-            "bin_regularisation": self.bin_regularisation,
+            "train_min_range": self.train_min_range,
+            "train_max_range": self.train_max_range,
+            "train_widths": self.train_widths,
+            "bin_smoothing": self.bin_smoothing,
             "T": self.T,
         }

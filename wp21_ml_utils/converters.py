@@ -8,6 +8,47 @@ from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
 class ImageToVectors(layers.Layer):
+    """
+    Converts a calorimeter-style image tensor into a ranked list of physics-like vectors.
+
+    This layer interprets a structured input image (e.g., eta–phi grid with feature channels)
+    and extracts the most significant "seed" cells based on transverse momentum (pT).
+    Each selected cell is converted into a vector of the form:
+
+        (pt, eta, phi)
+
+    Key steps:
+    - Computes (eta, phi) coordinates for each image cell using a fixed tower geometry.
+    - Aggregates per-cell transverse momentum from input channels.
+    - Flattens spatial dimensions and selects top-K highest-pT entries.
+    - Applies a minimum pT threshold mask.
+    - Returns a padded tensor of vectors sorted by descending pT.
+
+    Args:
+        max_vectors (int, optional):
+            Maximum number of vectors to return per event. If None, all cells are used.
+        min_pt (float):
+            Minimum transverse momentum threshold below which vectors are zeroed out.
+        dphi (float):
+            Azimuthal bin size used in coordinate construction.
+        deta (float):
+            Pseudorapidity bin size used in coordinate construction.
+        **kwargs:
+            Standard Keras layer keyword arguments.
+
+    Input shape:
+        Tensor of shape (B, E, P, C), where:
+            B = batch size
+            E = eta bins
+            P = phi bins
+            C = feature channels
+
+    Output shape:
+        Tensor of shape (B, K, 3), where:
+            K = max_vectors (or E*P if None)
+            3 = (pt, eta, phi)
+    """
+
     def __init__(
         self,
         max_vectors: int = None,
@@ -26,7 +67,7 @@ class ImageToVectors(layers.Layer):
         self.get_coords = TowerEtaPhiLayer(deta=self.deta, dphi=self.dphi)
         super().build(input_shape)
 
-    def call(self, image):
+    def call(self, image: TensorLike) -> tf.Tensor:
         B, E, P, _ = tf.unstack(tf.shape(image))
 
         eta, phi = self.get_coords(image)
@@ -62,6 +103,46 @@ class ImageToVectors(layers.Layer):
 
 
 class VectorsToImage(layers.Layer):
+    """
+    Converts sparse particle-like vectors into a dense eta–phi (optionally layered) image.
+
+    This layer takes a set of reconstructed physics objects described by (pt, eta, phi)
+    coordinates and accumulates them into a fixed 2D grid (or 3D grid with detector layers).
+
+    Each vector contributes its transverse momentum (pT) to the corresponding
+    (eta, phi) bin, optionally separated by detector layer.
+
+    Key steps:
+    - Unpacks input vectors into (pt, eta, phi [, layer]).
+    - Discretizes continuous coordinates into histogram bins using predefined edges.
+    - Filters out-of-range values.
+    - Scatters pT values into a dense grid using indexed accumulation.
+    - Optionally expands output for compatibility with image-like pipelines.
+
+    Args:
+        eta_edges (TensorLike):
+            Bin edges defining pseudorapidity segmentation.
+        phi_edges (TensorLike):
+            Bin edges defining azimuthal segmentation.
+        n_layers (int, optional):
+            Number of detector layers (required if use_layers=True).
+        use_layers (bool):
+            If True, expects input vectors to include a layer index and produces
+            a 4D output tensor.
+
+    Input shape:
+        If use_layers=False:
+            (B, N, 3) -> (pt, eta, phi)
+        If use_layers=True:
+            (B, N, 4) -> (pt, eta, phi, layer)
+
+    Output shape:
+        If use_layers=False:
+            (B, n_eta, n_phi, 1)
+        If use_layers=True:
+            (B, n_eta, n_phi, n_layers)
+    """
+
     def __init__(
         self,
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
@@ -76,11 +157,11 @@ class VectorsToImage(layers.Layer):
         self.use_layers = use_layers
         self.n_layers = n_layers
 
-    def call(self, x):
+    def call(self, vectors: TensorLike) -> tf.Tensor:
         if self.use_layers:
-            pt, eta, phi, layer = unpack_momenta(x[..., :4], keepdims=False)
+            pt, eta, phi, layer = unpack_momenta(vectors[..., :4], keepdims=False)
         else:
-            pt, eta, phi = unpack_momenta(x[..., :3], keepdims=False)
+            pt, eta, phi = unpack_momenta(vectors[..., :3], keepdims=False)
             layer = None
 
         B = tf.shape(pt)[0]

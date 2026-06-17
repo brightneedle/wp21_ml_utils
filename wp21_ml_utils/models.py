@@ -1,4 +1,4 @@
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import load_model, Model
 
 
 def collect_custom_objects():
@@ -27,6 +27,6 @@ def collect_custom_objects():
     return objects
 
 
-def load_wp21_model(path, custom_objects={}):
+def load_wp21_model(path: str, custom_objects: dict = {}) -> Model:
     custom_objects.update(collect_custom_objects())
     return load_model(path, custom_objects=custom_objects)

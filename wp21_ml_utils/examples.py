@@ -1,4 +1,5 @@
 from tensorflow.keras import Input, Model, ops, initializers
+from tensorflow.keras.regularizers import Regularizer
 from tensorflow.keras.layers import Multiply, Concatenate
 
 from wp21_ml_utils.converters import ImageToVectors
@@ -9,7 +10,6 @@ from wp21_ml_utils.layers import (
     SlidingConeSum,
     LocalMaxMask,
 )
-from wp21_ml_utils.regularisers import PushMaxWeightToUnity
 from wp21_ml_utils.utils import init_dense_layer
 
 
@@ -20,8 +20,45 @@ def ConeJets(
     max_jets: int = 20,
     shape: str = "circle",
     radius: float = None,
-    layer_name: str = "cone-layer",
-):
+    **kwargs,
+) -> Model:
+    """
+    Keras model that performs cone-based jet reconstruction from calorimeter images.
+
+    This model implements a simplified jet-finding pipeline inspired by cone clustering
+    algorithms used in high-energy physics. It identifies localized energy deposits,
+    selects stable seed regions, and converts them into a fixed-size set of jet vectors.
+
+    Pipeline:
+        1. Compute local energy sums using a sliding cone window.
+        2. Detect local maxima in the original image as jet seeds.
+        3. Mask cone-summed responses using the seed locations.
+        4. Convert the resulting sparse image into ranked (pt, eta, phi) jet vectors.
+
+    Args:
+        input_shape (tuple[int]):
+            Shape of the input calorimeter image excluding batch dimension,
+            typically (eta_bins, phi_bins, channels).
+        kernel_size (int):
+            Size of the sliding cone window used to aggregate local energy.
+        min_pt (float):
+            Minimum transverse momentum threshold below which jets are discarded.
+        max_jets (int):
+            Maximum number of jets to return in the output representation.
+        shape (str):
+            Geometry of the cone window (e.g. "circle" or "square").
+        radius (float, optional):
+            Optional physical radius parameter for the cone shape (if supported).
+        **kwargs:
+            Additional keyword arguments passed to `tf.keras.Model`.
+
+    Returns:
+        tf.keras.Model:
+            A Keras model mapping calorimeter images to a fixed-length tensor of
+            jet vectors with shape (batch, max_jets, 3), where each vector is
+            (pt, eta, phi).
+    """
+
     image = Input(shape=input_shape)
 
     cone_sums = SlidingConeSum(
@@ -44,7 +81,7 @@ def ConeJets(
     # convert to 3-vectors
     jet_vectors = ImageToVectors(max_vectors=max_jets, min_pt=min_pt)(masked_cone_sums)
 
-    return Model(inputs=image, outputs=jet_vectors, name=layer_name)
+    return Model(inputs=image, outputs=jet_vectors, **kwargs)
 
 
 def PileupCNN(
@@ -55,9 +92,50 @@ def PileupCNN(
     use_hgq: bool = False,
     init_as_layer_sum: bool = True,
     with_abseta: bool = True,
-    push_max_to_unity: bool = False,
+    weight_regulariser: Regularizer = None,
     **kwargs,
-):
+) -> Model:
+    """
+    Constructs a convolutional neural network for pileup mitigation in calorimeter images.
+
+    The model learns per-pixel weights that down-weight pileup contamination
+    while preserving physically meaningful energy deposits.
+
+    Architecture:
+    1. Optional eta–phi padding for convolution stability.
+    2. Symmetric depthwise convolution over the calorimeter image.
+    3. Optional augmentation with log(|eta|) features.
+    4. Fully connected per-pixel refinement network.
+    5. Learned multiplicative weighting of input image.
+
+    Final output is a reweighted version of the input image.
+
+    Args:
+        input_shape (tuple[int]):
+            Shape of the input calorimeter image (E, P, C).
+        size (int):
+            Kernel size for depthwise convolution.
+        depth_multiplier (int):
+            Number of filters per input channel in depthwise convolution.
+        hidden_layer_sizes (list[int]):
+            Sizes of intermediate dense layers applied per pixel.
+        use_hgq (bool):
+            Whether to use HGQ-aware layers (hardware-aware quantisation support).
+        init_as_layer_sum (bool):
+            If True, initializes final weighting layer to approximate identity
+            (bias=3, zero kernel), encouraging initial pass-through behavior.
+        with_abseta (bool):
+            If True, includes log(|eta|) as an additional feature channel.
+        weight_regulariser (Regularizer, optional):
+            Optional regularizer applied to learned weights.
+        **kwargs:
+            Additional arguments passed to the Keras Model constructor.
+
+    Returns:
+        tf.keras.Model:
+            A model that outputs a pileup-suppressed version of the input image,
+            with the same shape as the input.
+    """
     inputs = Input(shape=input_shape)
 
     x = EtaPhiPadding(size // 2)(inputs)
@@ -81,7 +159,7 @@ def PileupCNN(
         activation="hard_sigmoid",
         kernel_initializer="zeros" if init_as_layer_sum else "glorot_uniform",
         bias_initializer=initializers.Constant(3.0) if init_as_layer_sum else "zeros",
-        activity_regularizer=PushMaxWeightToUnity(1e-3) if push_max_to_unity else None,
+        activity_regularizer=weight_regulariser,
         use_hgq=use_hgq,
     )(x)
 

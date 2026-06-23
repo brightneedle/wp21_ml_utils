@@ -3,6 +3,7 @@ from typing import Callable, Tuple, Optional, Union, Any
 import tensorflow as tf
 from tensorflow.keras import layers, activations
 from tensorflow.keras.backend import set_image_data_format
+from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.types.experimental import TensorLike
 import numpy as np
 import itertools
@@ -17,6 +18,7 @@ from wp21_ml_utils.utils import (
 set_image_data_format("channels_last")
 
 
+@register_keras_serializable("wp21_ml_utils")
 class SymmetricPooling(layers.Layer):
     """
     Symmetry-aware pooling layer.
@@ -96,6 +98,7 @@ class SymmetricPooling(layers.Layer):
         return config
 
 
+@register_keras_serializable("wp21_ml_utils")
 class SymmetricDepthwiseConv2D(layers.Layer):
     """
     Symmetry-constrained depthwise convolution.
@@ -179,6 +182,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         return config
 
 
+@register_keras_serializable("wp21_ml_utils")
 class EtaPhiPadding(layers.Layer):
     """
     Detector-aware η–φ padding.
@@ -225,6 +229,7 @@ class EtaPhiPadding(layers.Layer):
         return {**super().get_config(), "pad_size": self.pad_size}
 
 
+@register_keras_serializable("wp21_ml_utils")
 class TowerEtaPhiLayer(layers.Layer):
     """
     Generates η and φ coordinate maps for calorimeter images.
@@ -268,6 +273,7 @@ class TowerEtaPhiLayer(layers.Layer):
         return {**super().get_config(), "deta": self.deta, "dphi": self.dphi}
 
 
+@register_keras_serializable("wp21_ml_utils")
 class SlidingConeSum(layers.Layer):
     """
     Sliding-window energy sum.
@@ -351,6 +357,7 @@ class SlidingConeSum(layers.Layer):
         super().build(input_shape)
 
 
+@register_keras_serializable("wp21_ml_utils")
 class CircularMaxPool(tf.keras.layers.Layer):
     """
     Circular max-pooling operator.
@@ -410,6 +417,7 @@ class CircularMaxPool(tf.keras.layers.Layer):
         return tf.reduce_max(patches, axis=[3, 4])
 
 
+@register_keras_serializable("wp21_ml_utils")
 class LocalMaxMask(layers.Layer):
     """
     Local-maximum detector.
@@ -486,6 +494,7 @@ class LocalMaxMask(layers.Layer):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class NthLeadingPt(layers.Layer):
     """
     Extracts the N-th highest transverse momentum.
@@ -521,6 +530,7 @@ class NthLeadingPt(layers.Layer):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class VectorSum(layers.Layer):
     """
     Vectorial momentum summation.
@@ -587,6 +597,7 @@ class VectorSum(layers.Layer):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class MonoDense(layers.Dense):
     """
     Monotonic fully-connected layer.

@@ -1,12 +1,15 @@
 import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 
 
 plt.rcParams["figure.dpi"] = 150
 plt.rcParams["figure.constrained_layout.use"] = True
 
-output_dir = os.path.join("./test_outputs")
-os.makedirs(output_dir, exist_ok=True)
+TEST_DIR = Path(__file__).parent
+DATA_DIR = TEST_DIR / "data"
+OUTPUT_DIR = TEST_DIR / "test_outputs"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def test_imports():
@@ -23,8 +26,9 @@ def test_imports():
 
 def test_pucnn():
     import numpy as np
-    from wp21_ml_utils.models import load_wp21_model
-    from wp21_ml_utils.examples import PileupCNN
+    from tensorflow.keras import Sequential
+    from wp21_ml_utils.model import load_model
+    from wp21_ml_utils.pileup import PileupCNN
     from wp21_ml_utils.regularisers import PushMaxWeightToUnity, SparsityPenalty
 
     strength = 1e-3
@@ -32,21 +36,24 @@ def test_pucnn():
     x = np.random.normal(size=(128, 50, 64, 6))
 
     for regulariser in [PushMaxWeightToUnity(strength), SparsityPenalty(strength)]:
-        model = PileupCNN(
-            (50, 64, 6),
-            use_hgq=True,
-            init_as_layer_sum=True,
-            push_max_to_unity=True,
-            weight_regulariser=regulariser,
+        model = Sequential(
+            [
+                PileupCNN(
+                    use_hgq=True,
+                    init_as_layer_sum=True,
+                    weight_regulariser=regulariser,
+                ),
+            ]
         )
+
         y = model(x)
 
         np.testing.assert_equal(x.shape, y.shape)
         np.testing.assert_allclose(x, y)
 
-        output_path = os.path.join(output_dir, "test_qcnn.keras")
+        output_path = os.path.join(OUTPUT_DIR, "test_qcnn.keras")
         model.save(output_path)
-        load_wp21_model(output_path)
+        load_model(output_path)
 
         model.compile(loss="mse", optimizer="adam")
         model.evaluate(x, x, verbose=0)
@@ -55,7 +62,7 @@ def test_pucnn():
 def test_quantisers():
     import numpy as np
     from tensorflow.keras import Sequential
-    from wp21_ml_utils.models import load_wp21_model
+    from wp21_ml_utils.model import load_model
     from wp21_ml_utils.quantisers import QuadLinearQuantiser, FlexibleQuantiser
 
     x = np.exp(np.random.normal(size=(10000, 1)))
@@ -77,18 +84,18 @@ def test_quantisers():
 
         ax[1].plot(model.layers[0]._compute_bin_edges().numpy())
 
-        plt.savefig(os.path.join(output_dir, f"quantiser_test_{qlayer.name}.png"))
+        plt.savefig(os.path.join(OUTPUT_DIR, f"quantiser_test_{qlayer.name}.png"))
         plt.close()
 
-        output_path = os.path.join(output_dir, f"test_quantiser_{qlayer.name}.keras")
+        output_path = os.path.join(OUTPUT_DIR, f"test_quantiser_{qlayer.name}.keras")
         model.save(output_path)
-        load_wp21_model(output_path)
+        load_model(output_path)
 
 
 def test_mono_dense():
     import numpy as np
     from tensorflow.keras import Sequential
-    from wp21_ml_utils.models import load_wp21_model
+    from wp21_ml_utils.model import load_model
     from wp21_ml_utils.layers import MonoDense
     from scipy.stats import spearmanr
 
@@ -114,24 +121,28 @@ def test_mono_dense():
     plt.scatter(x, y, s=0.1, label="True")
     plt.scatter(x, y_pred, s=0.1, label="MLP")
     plt.legend()
-    plt.savefig(os.path.join(output_dir, "monodense_test.png"))
+    plt.savefig(os.path.join(OUTPUT_DIR, "monodense_test.png"))
     plt.close()
 
-    output_path = os.path.join(output_dir, "monodense_mlp.keras")
+    output_path = os.path.join(OUTPUT_DIR, "monodense_mlp.keras")
     model.save(output_path)
-    load_wp21_model(output_path)
+    load_model(output_path)
 
 
 def test_cone_jets():
     import numpy as np
-    from wp21_ml_utils.models import load_wp21_model
-    from wp21_ml_utils.examples import ConeJets
+    from tensorflow.keras import Sequential
+    from wp21_ml_utils.model import load_model
+    from wp21_ml_utils.clustering import ConeJet
 
-    model = ConeJets(
-        input_shape=(9, 9, 1),
-        kernel_size=3,
-        max_jets=2,
-        min_pt=0,
+    model = Sequential(
+        [
+            ConeJet(
+                kernel_size=3,
+                max_jets=2,
+                min_pt=0,
+            )
+        ]
     )
 
     x = np.zeros((1, 9, 9, 1), dtype=np.float32)
@@ -139,15 +150,15 @@ def test_cone_jets():
     x[0, 2, 2, 0] = 5.0
     x[0, 6, 6, 0] = 10.0
 
-    jets = model.predict(x, verbose=0)
+    jets = model(x)
 
     assert jets[0, 0, 0] >= jets[0, 1, 0]
 
     np.testing.assert_allclose(jets[0, :, 0], [10.0, 5.0])
 
-    output_path = os.path.join(output_dir, "test_cone.keras")
+    output_path = os.path.join(OUTPUT_DIR, "test_cone.keras")
     model.save(output_path)
-    load_wp21_model(output_path)
+    load_model(output_path)
 
 
 def test_towers():
@@ -158,7 +169,7 @@ def test_towers():
         eta_edges=np.array([-1.0, 0.0, 1.0], dtype=np.float32),
         phi_edges=np.array([-np.pi, 0.0, np.pi], dtype=np.float32),
         n_layers=6,
-        use_layers=True,
+        return_layers=True,
     )
 
     x = np.asarray(
@@ -184,7 +195,7 @@ def test_towers():
     ax[0].matshow(expected[0].sum(axis=-1))
     ax[1].matshow(out[0].sum(axis=-1))
 
-    plt.savefig(os.path.join(output_dir, "tower_test.png"))
+    plt.savefig(os.path.join(OUTPUT_DIR, "tower_test.png"))
     plt.close()
 
 
@@ -236,3 +247,33 @@ def test_coordinates():
         rtol=1e-5,
         atol=1e-6,
     )
+
+
+def test_build_from_config():
+    import numpy as np
+    from pprint import pprint
+    from wp21_ml_utils.model import (
+        load_config,
+        build_from_config,
+        compile_from_config,
+        load_model,
+    )
+
+    config = load_config(DATA_DIR / "test_model_config.yaml")
+    pprint(config)
+
+    model, _, _ = build_from_config(config)
+
+    compile_from_config(model, config)
+
+    train_data = np.load(DATA_DIR / "train_data.npz")
+
+    model.evaluate(
+        x={k: train_data[k] for k in config["inputs"]},
+        y={k: train_data[k] for k in config["outputs"]},
+        verbose=0,
+    )
+
+    save_to = OUTPUT_DIR / "test_pipeline.keras"
+    model.save(save_to)
+    load_model(save_to)

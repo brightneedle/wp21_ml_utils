@@ -2,9 +2,11 @@ from typing import Union
 
 import tensorflow as tf
 from tensorflow.keras.regularizers import Regularizer
+from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.types.experimental import TensorLike
 
 
+@register_keras_serializable("wp21_ml_utils")
 class PushMaxWeightToUnity(Regularizer):
     """
     Regulariser that encourages the maximum weight value to equal one.
@@ -43,6 +45,7 @@ class PushMaxWeightToUnity(Regularizer):
         return {"strength": self.strength, "axis": self.axis}
 
 
+@register_keras_serializable("wp21_ml_utils")
 class SparsityPenalty(Regularizer):
     """
     Sparsity-promoting regulariser.

@@ -1,5 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.types.experimental import TensorLike
 import numpy as np
 
@@ -7,7 +8,8 @@ from wp21_ml_utils.utils import unpack_momenta
 from wp21_ml_utils.layers import TowerEtaPhiLayer
 
 
-class ImageToVectors(layers.Layer):
+@register_keras_serializable("wp21_ml_utils")
+class ImageToVectors(Layer):
     """
     Converts a calorimeter-style image tensor into a ranked list of physics-like vectors.
 
@@ -102,7 +104,8 @@ class ImageToVectors(layers.Layer):
         }
 
 
-class VectorsToImage(layers.Layer):
+@register_keras_serializable("wp21_ml_utils")
+class VectorsToImage(Layer):
     """
     Converts sparse particle-like vectors into a dense eta–phi (optionally layered) image.
 
@@ -148,17 +151,17 @@ class VectorsToImage(layers.Layer):
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
         phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
         n_layers: int = None,
-        use_layers: bool = False,
+        return_layers: bool = False,
         **kwargs
     ):
         super().__init__(**kwargs)
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
-        self.use_layers = use_layers
+        self.return_layers = return_layers
         self.n_layers = n_layers
 
     def call(self, vectors: TensorLike) -> tf.Tensor:
-        if self.use_layers:
+        if self.return_layers:
             pt, eta, phi, layer = unpack_momenta(vectors[..., :4], keepdims=False)
         else:
             pt, eta, phi = unpack_momenta(vectors[..., :3], keepdims=False)
@@ -235,4 +238,6 @@ class VectorsToImage(layers.Layer):
             **super().get_config(),
             "eta_edges": self.eta_edges.numpy().tolist(),
             "phi_edges": self.phi_edges.numpy().tolist(),
+            "return_layers": self.return_layers,
+            "n_layers": self.n_layers,
         }

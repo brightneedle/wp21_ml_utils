@@ -1,0 +1,61 @@
+inputs:
+  cells:
+    shape: [null, 4] # pt eta phi layer
+
+algorithms:
+  encode_cells:
+    op: EncodeCellEt
+    inputs: [cells]
+    params:
+      encoding:
+        class_name: QuadLinearQuantiser
+        config:
+          trainable: true
+
+  towers:
+    op: VectorsToImage
+    inputs: [encode_cells]
+    params:
+      return_layers: true
+      n_layers: 6
+
+  pileup:
+    op: PileupCNN
+    inputs: [towers]
+
+  jets:
+    op: ConeJet
+    inputs: [pileup]
+
+  calib:
+    op: CalibrationMLP
+    inputs: [jets]
+
+  pt_1:
+    op: NthLeadingPt
+    inputs: [calib]
+    params:
+      index: 1
+
+  pt_4:
+    op: NthLeadingPt
+    inputs: [calib]
+    params:
+      index: 4
+
+outputs:
+  pt_1:
+     loss: mse
+  pt_4:
+    loss: MeanAbsoluteError
+    loss_weight: 0.5
+  calib:
+    loss: CalibrationLoss
+
+optimiser:
+  op: adam
+  params:
+    learning_rate: 0.001
+    clipnorm: 1.
+
+random_state: 42

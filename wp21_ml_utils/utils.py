@@ -6,7 +6,9 @@ from tensorflow.keras.layers import Dense
 from hgq.layers import QDense
 
 
-def unpack_momenta(momenta: tf.Tensor, keepdims: bool = True) -> tuple[tf.Tensor]:
+def unpack_momenta(
+    momenta: tf.Tensor, keepdims: bool = True
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Splits momentum tensors into individual components.
 
@@ -37,7 +39,7 @@ def unpack_momenta(momenta: tf.Tensor, keepdims: bool = True) -> tuple[tf.Tensor
 
 def polar_to_cartesian(
     pt: tf.Tensor, eta: tf.Tensor, phi: tf.Tensor
-) -> tuple[tf.Tensor]:
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Converts momentum coordinates from (pT, η, φ) to (px, py, pz).
 
@@ -63,7 +65,9 @@ def polar_to_cartesian(
     return px, py, pz
 
 
-def cartesian_to_polar(px: tf.Tensor, py: tf.Tensor, pz: tf.Tensor) -> tuple[tf.Tensor]:
+def cartesian_to_polar(
+    px: tf.Tensor, py: tf.Tensor, pz: tf.Tensor
+) -> tuple[tf.Tensor, tf]:
     """
     Converts momentum coordinates from (px, py, pz) to (pT, η, φ).
 

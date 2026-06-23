@@ -1,11 +1,16 @@
+from typing import Callable
+
 import tensorflow as tf
-from tensorflow.keras import initializers, layers
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.initializers import Constant
+from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.types.experimental import TensorLike
 
-from wp21_ml_utils.utils import scaled_softplus
+from wp21_ml_utils.utils import scaled_softplus, unpack_momenta
 
 
-class BaseQuantiser(layers.Layer):
+@register_keras_serializable("wp21_ml_utils")
+class BaseQuantiser(Layer):
     """
     Abstract base class for differentiable quantisation layers.
 
@@ -64,6 +69,7 @@ class BaseQuantiser(layers.Layer):
         return {**super().get_config(), "T": self.T}
 
 
+@register_keras_serializable("wp21_ml_utils")
 class QuadLinearQuantiser(BaseQuantiser):
     """
     Piecewise-geometric quantiser with four dynamic ranges.
@@ -122,13 +128,13 @@ class QuadLinearQuantiser(BaseQuantiser):
     def build(self, input_shape):
         self.lsb = self.add_weight(
             shape=[1],
-            initializer=initializers.Constant(self.lsb_init),
+            initializer=Constant(self.lsb_init),
             trainable=self.trainable,
             name=f"{self.name}_lsb",
         )
         self.G = self.add_weight(
             shape=[1],
-            initializer=initializers.Constant(self.G_init),
+            initializer=Constant(self.G_init),
             trainable=self.trainable,
             name=f"{self.name}_G",
         )
@@ -157,6 +163,7 @@ class QuadLinearQuantiser(BaseQuantiser):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class FlexibleQuantiser(BaseQuantiser):
     """
     Learnable non-uniform quantiser.
@@ -235,7 +242,7 @@ class FlexibleQuantiser(BaseQuantiser):
     def build(self, input_shape):
         self.lower = self.add_weight(
             shape=[1],
-            initializer=initializers.Constant(self.min_range),
+            initializer=Constant(self.min_range),
             trainable=self.train_min_range,
             name=f"{self.name}_min_range",
         )
@@ -277,3 +284,32 @@ class FlexibleQuantiser(BaseQuantiser):
             "bin_smoothing": self.bin_smoothing,
             "T": self.T,
         }
+
+
+@register_keras_serializable("wp21_ml_utils")
+class EncodeCellEt(Layer):
+    def __init__(self, encoding: Callable, **kwargs):
+        super().__init__(**kwargs)
+        self.encoding = encoding
+
+    def call(self, x):
+        components = unpack_momenta(x)
+        et = components[0]
+        encoded_et = self.encoding(et)
+        return tf.concat([encoded_et, *components[1:]], axis=-1)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {"encoding": tf.keras.utils.serialize_keras_object(self.encoding)}
+        )
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        custom_objects = tf.keras.utils.get_custom_objects()
+        encoding_config = config["encoding"]
+        config["encoding"] = tf.keras.utils.deserialize_keras_object(
+            encoding_config, custom_objects=custom_objects
+        )
+        return cls(**config)

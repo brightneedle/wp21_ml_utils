@@ -2,6 +2,7 @@ from typing import Union
 
 import tensorflow as tf
 from tensorflow.keras.losses import Loss
+from tensorflow.keras.utils import register_keras_serializable
 import numpy as np
 
 from wp21_ml_utils.utils import unpack_momenta, polar_to_cartesian, transpose
@@ -163,6 +164,7 @@ def chamfer_distance(
     return tf.reduce_mean(loss_per_example) if reduce_mean else loss_per_example
 
 
+@register_keras_serializable("wp21_ml_utils")
 class ChamferLoss(Loss):
     """
     Keras loss wrapper for particle-level Chamfer distance.
@@ -225,6 +227,7 @@ class ChamferLoss(Loss):
         return {**base_config, **config}
 
 
+@register_keras_serializable("wp21_ml_utils")
 class SparsityLoss(Loss):
     """
     Sparsity regularisation loss.
@@ -303,6 +306,7 @@ class SparsityLoss(Loss):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class CalibrationLoss(Loss):
     """
     Momentum calibration loss for matched particle pairs.
@@ -379,6 +383,7 @@ class CalibrationLoss(Loss):
         }
 
 
+@register_keras_serializable("wp21_ml_utils")
 class PinballLoss(Loss):
     """
     Quantile regression loss.

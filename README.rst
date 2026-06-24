@@ -103,7 +103,7 @@ Example configuration:
        inputs: encode_cells
        params:
          return_layers: true
-         n_layers: 6
+         filter_layers: [0, 1, 2, 3, 4, 5]
 
      pileup:
        op: PileupCNN

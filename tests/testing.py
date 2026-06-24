@@ -168,7 +168,7 @@ def test_towers():
     layer = VectorsToImage(
         eta_edges=np.array([-1.0, 0.0, 1.0], dtype=np.float32),
         phi_edges=np.array([-np.pi, 0.0, np.pi], dtype=np.float32),
-        n_layers=6,
+        filter_layers=range(6),
         return_layers=True,
     )
 

@@ -57,7 +57,7 @@ class ImageToVectors(Layer):
         min_pt: float = 0,
         dphi: float = np.pi / 32,
         deta: float = 0.1,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.max_vectors = max_vectors
@@ -127,11 +127,10 @@ class VectorsToImage(Layer):
             Bin edges defining pseudorapidity segmentation.
         phi_edges (TensorLike):
             Bin edges defining azimuthal segmentation.
-        n_layers (int, optional):
-            Number of detector layers (required if use_layers=True).
-        use_layers (bool):
-            If True, expects input vectors to include a layer index and produces
-            a 4D output tensor.
+        use_layers (list[int] | None):
+            Detector layer IDs to include in the output image. If None, all layers are included.
+        return_layers (bool):
+            Whether to produce a multi-channel image.
 
     Input shape:
         If use_layers=False:
@@ -150,19 +149,30 @@ class VectorsToImage(Layer):
         self,
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
         phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
-        n_layers: int = None,
+        filter_layers: list[int] = None,
         return_layers: bool = False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
         self.return_layers = return_layers
-        self.n_layers = n_layers
+        self.filter_layers = filter_layers
 
     def call(self, vectors: TensorLike) -> tf.Tensor:
-        if self.return_layers:
+        has_layer_input = vectors.shape[-1] is not None and vectors.shape[-1] >= 4
+        needs_layer_input = self.return_layers or self.filter_layers is not None
+
+        if needs_layer_input and not has_layer_input:
+            raise ValueError(
+                "Layer information is required when "
+                "`return_layers=True` or `filter_layers` is provided. "
+                f"Expected input shape (..., >=4), got {vectors.shape}."
+            )
+
+        if has_layer_input:
             pt, eta, phi, layer = unpack_momenta(vectors[..., :4], keepdims=False)
+            layer = tf.cast(layer, tf.int32)
         else:
             pt, eta, phi = unpack_momenta(vectors[..., :3], keepdims=False)
             layer = None
@@ -184,6 +194,17 @@ class VectorsToImage(Layer):
 
         valid = (eta_bin >= 0) & (eta_bin < n_eta) & (phi_bin >= 0) & (phi_bin < n_phi)
 
+        # Optional layer filtering
+        if layer is not None and self.filter_layers is not None:
+            allowed = tf.reduce_any(
+                tf.equal(
+                    layer[..., None],
+                    tf.constant(self.filter_layers, dtype=tf.int32),
+                ),
+                axis=-1,
+            )
+            valid &= allowed
+
         eta_bin = tf.where(valid, eta_bin, 0)
         phi_bin = tf.where(valid, phi_bin, 0)
         pt = tf.where(valid, pt, 0.0)
@@ -191,25 +212,37 @@ class VectorsToImage(Layer):
         batch_idx = tf.reshape(tf.range(B), (B, 1))
         batch_idx = tf.tile(batch_idx, (1, N))
 
-        if layer is not None:
-            layer = tf.cast(layer, tf.int32)
+        if self.return_layers:
+            # Map physical layer IDs -> channel indices
+            if self.filter_layers is not None:
+                layer_map = tf.lookup.StaticHashTable(
+                    tf.lookup.KeyValueTensorInitializer(
+                        keys=tf.constant(self.filter_layers, dtype=tf.int32),
+                        values=tf.range(len(self.filter_layers), dtype=tf.int32),
+                    ),
+                    default_value=0,
+                )
 
-            layer = tf.reshape(layer, [-1])
-            layer = tf.reshape(layer, [B, N])
+                layer_idx = layer_map.lookup(layer)
+                n_layers = len(self.filter_layers)
 
-            layer = tf.where(valid, layer, 0)
+            else:
+                layer_idx = layer
+                n_layers = tf.reduce_max(layer) + 1
+
+            layer_idx = tf.where(valid, layer_idx, 0)
 
             indices = tf.stack(
                 [
                     tf.reshape(batch_idx, [-1]),
                     tf.reshape(eta_bin, [-1]),
                     tf.reshape(phi_bin, [-1]),
-                    tf.reshape(layer, [-1]),
+                    tf.reshape(layer_idx, [-1]),
                 ],
                 axis=1,
             )
 
-            out_shape = (B, n_eta, n_phi, self.n_layers)
+            out_shape = (B, n_eta, n_phi, n_layers)
 
         else:
             indices = tf.stack(
@@ -228,7 +261,7 @@ class VectorsToImage(Layer):
         towers = tf.zeros(out_shape, dtype=tf.float32)
         towers = tf.tensor_scatter_nd_add(towers, indices, updates)
 
-        if layer is None:
+        if not self.return_layers:
             towers = tf.expand_dims(towers, axis=-1)
 
         return towers
@@ -239,5 +272,5 @@ class VectorsToImage(Layer):
             "eta_edges": self.eta_edges.numpy().tolist(),
             "phi_edges": self.phi_edges.numpy().tolist(),
             "return_layers": self.return_layers,
-            "n_layers": self.n_layers,
+            "filter_layers": self.filter_layers,
         }

@@ -29,6 +29,12 @@ From the repository root:
 
    pip install -e .
 
+Or to additionally install TensorFlow, Keras and HGQ2:
+
+.. code-block:: bash
+
+   pip install -e .[tf]
+
 For development and testing:
 
 .. code-block:: bash
@@ -38,7 +44,7 @@ For development and testing:
 Dependencies
 ------------
 
-- ``tensorflow[and-cuda]==2.18``
+- ``tensorflow[and-cuda]>=2.16``
 - ``HGQ2==0.1.8``
 - ``pyyaml``
 

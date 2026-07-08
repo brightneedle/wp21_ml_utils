@@ -91,7 +91,7 @@ class ConeJet(Layer):
         )
 
         self.local_max = LocalMaxMask(
-            kernel_size=self.kernel_size,
+            kernel_size=2 * self.kernel_size - 1,
             shape=self.shape,
             name="local_max",
         )

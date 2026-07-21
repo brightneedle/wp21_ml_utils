@@ -164,6 +164,7 @@ See the next section for how to register custom layers.
 QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope, for example:
 
 .. code-block:: python
+  from hgq.config import LayerConfigScope, QuantizerConfigScope
 
   with (
       QuantizerConfigScope(place="all", default_q_type="kbi", overflow_mode="SAT_SYM"),
@@ -174,7 +175,7 @@ QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope,
 
 Extending the package with custom layers
 ----------------------------
-User-defined custom layers can be registered with ``update_custom_objects``, for example before calling ``build_from_config``:
+User-defined custom layers can be registered with ``update_custom_objects``.
 
 .. code-block:: python
 
@@ -185,6 +186,8 @@ User-defined custom layers can be registered with ``update_custom_objects``, for
         return inputs * 2
 
   update_custom_objects({"MyCustomLayer": MyCustomLayer})
+
+Registering the layer before calling ``build_from_config`` allows the layer to be referenced in the model configuration.
 
 License
 -------

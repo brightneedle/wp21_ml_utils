@@ -72,7 +72,7 @@ Config-driven model building
 Model graphs can be described in YAML. The top-level sections are:
 
 - ``inputs``: named Keras inputs with their tensor shapes.
-- ``algorithms``: ordered layer nodes. Each node has an ``op``, one or more
+- ``layers``: ordered layer nodes. Each node has an ``class``, one or more
   ``inputs``, and optional ``params`` passed to the layer constructor.
 - ``outputs``: named tensors to expose as model outputs, with optional loss
   and loss-weight settings used by ``compile_from_config``.
@@ -87,7 +87,7 @@ Example configuration:
      cells:
        shape: [null, 4]  # pt, eta, phi, layer
 
-   algorithms:
+   layers:
      encode_cells:
        class: EncodeCellEt
        inputs: cells
@@ -159,8 +159,7 @@ Build and compile the model from that config:
    restored = load_model("pipeline.keras")
 
 The ``layer`` values in the YAML are resolved through either Keras custom objects or standard Keras layers.
-``build_from_config`` registers classes from the package modules before
-deserialising each layer.
+See the next section for how to register custom layers.
 
 QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope, for example:
 

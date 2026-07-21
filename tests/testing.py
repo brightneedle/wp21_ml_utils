@@ -277,3 +277,33 @@ def test_build_from_config():
     save_to = OUTPUT_DIR / "test_pipeline.keras"
     model.save(save_to)
     load_model(save_to)
+
+
+def test_build_from_custom_object():
+    from tensorflow.keras.layers import Layer
+    from wp21_ml_utils.model import build_from_config, update_custom_objects
+
+    class CustomLayer(Layer):
+        def call(self, inputs):
+            return inputs * 2
+
+    config = {
+        "inputs": {
+            "input": {
+                "shape": [1],
+            },
+        },
+        "layers": {
+            "custom_layer": {
+                "class": "CustomLayer",
+                "inputs": ["input"],
+            },
+        },
+        "outputs": {
+            "custom_layer": {},
+        },
+    }
+
+    update_custom_objects({"CustomLayer": CustomLayer})
+
+    model, _, _ = build_from_config(config)

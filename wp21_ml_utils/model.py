@@ -52,8 +52,8 @@ def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
         tensor_dict[name] = tf.keras.Input(shape=spec["shape"], name=name)
 
     layers_dict = {}
-    for node_name, node in config["algorithms"].items():
-        op_name = node["op"]
+    for node_name, node in config["layers"].items():
+        class_name = node["class"]
 
         inputs = node["inputs"]
         if isinstance(inputs, str):
@@ -68,7 +68,7 @@ def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
         params = node.get("params", {}) or {}
 
         layer = tf.keras.utils.deserialize_keras_object(
-            {"class_name": op_name, "config": params},
+            {"class_name": class_name, "config": params},
         )
         layers_dict[node_name] = layer
         tensor_dict[node_name] = layer(x)
@@ -96,9 +96,9 @@ def compile_from_config(model: tf.keras.Model, config: dict) -> tf.keras.Model:
 
         loss_weights[name] = spec.get("loss_weight", 1.0)
 
-    optimiser_config = config.get("optimiser", {"op": "adam", "params": {}})
+    optimiser_config = config.get("optimiser", {"class": "adam", "params": {}})
     optimiser = tf.keras.optimizers.deserialize(
-        {"class_name": optimiser_config["op"], "config": optimiser_config["params"]}
+        {"class_name": optimiser_config["class"], "config": optimiser_config["params"]}
     )
 
     model.compile(
@@ -110,6 +110,6 @@ def compile_from_config(model: tf.keras.Model, config: dict) -> tf.keras.Model:
     return model
 
 
-def load_model(path, custom_objects: dict = {}, compile: bool = True) -> tf.keras.Model:
+def load_model(path, compile: bool = True) -> tf.keras.Model:
     update_custom_objects()
     return tf.keras.models.load_model(path, compile=compile)

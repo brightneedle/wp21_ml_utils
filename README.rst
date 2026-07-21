@@ -89,7 +89,7 @@ Example configuration:
 
    algorithms:
      encode_cells:
-       op: EncodeCellEt
+       class: EncodeCellEt
        inputs: cells
        params:
          encoding:
@@ -99,28 +99,28 @@ Example configuration:
              trainable: true
 
      towers:
-       op: VectorsToImage
+       class: VectorsToImage
        inputs: encode_cells
        params:
          return_layers: true
          filter_layers: [0, 1, 2, 3, 4, 5]
 
      pileup:
-       op: PileupCNN
+       class: PileupCNN
        inputs: towers
 
      jets:
-       op: ConeJet
+       class: ConeJet
        inputs: pileup
        params:
          max_jets: 20
 
      calib:
-       op: CalibrationMLP
+       class: CalibrationMLP
        inputs: jets
 
      leading_pt:
-       op: NthLeadingPt
+       class: NthLeadingPt
        inputs: calib
        params:
          index: 1
@@ -133,7 +133,7 @@ Example configuration:
        loss_weight: 0.5
 
    optimiser:
-     op: adam
+     class: adam
      params:
        learning_rate: 0.001
        clipnorm: 1.0
@@ -158,7 +158,7 @@ Build and compile the model from that config:
    model.save("pipeline.keras")
    restored = load_model("pipeline.keras")
 
-The ``op`` values in the YAML are resolved through Keras custom objects.
+The ``layer`` values in the YAML are resolved through either Keras custom objects or standard Keras layers.
 ``build_from_config`` registers classes from the package modules before
 deserialising each layer.
 
@@ -173,6 +173,19 @@ QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope,
     ):
     model, layers, tensors = build_from_config(config)
 
+Extending the package with custom layers
+----------------------------
+User-defined custom layers can be registered with ``update_custom_objects``, for example before calling ``build_from_config``:
+
+.. code-block:: python
+
+  from wp21_ml_utils.model import update_custom_objects
+
+  class MyCustomLayer(Layer):
+    def call(self, inputs):
+        return inputs * 2
+
+  update_custom_objects({"MyCustomLayer": MyCustomLayer})
 
 License
 -------

@@ -164,6 +164,7 @@ See the next section for how to register custom layers.
 QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope, for example:
 
 .. code-block:: python
+
   from hgq.config import LayerConfigScope, QuantizerConfigScope
 
   with (

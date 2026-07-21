@@ -9,10 +9,9 @@ setup(
     author_email="noah.clarkehall@cern.ch",
     license="BSD 2-clause",
     packages=["wp21_ml_utils"],
-    install_requires=["pyyaml"],
+    install_requires=["pyyaml", "tensorflow>=2.16", "HGQ2==0.1.8"],
     extras_require={
         "dev": ["pytest", "matplotlib", "pre-commit"],
-        "tf": ["tensorflow>=2.16", "HGQ2==0.1.8"],
     },
     classifiers=[
         "Development Status :: 1 - Planning",

@@ -29,13 +29,7 @@ From the repository root:
 
    pip install -e .
 
-Or to additionally install TensorFlow, Keras and HGQ2:
-
-.. code-block:: bash
-
-   pip install -e .[tf]
-
-For development and testing:
+For development and testing, additional dependencies can be installed via:
 
 .. code-block:: bash
 
@@ -167,6 +161,18 @@ Build and compile the model from that config:
 The ``op`` values in the YAML are resolved through Keras custom objects.
 ``build_from_config`` registers classes from the package modules before
 deserialising each layer.
+
+QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope, for example:
+
+.. code-block:: python
+
+  with (
+      QuantizerConfigScope(place="all", default_q_type="kbi", overflow_mode="SAT_SYM"),
+      QuantizerConfigScope(place="datalane", default_q_type="kif", overflow_mode="WRAP"),
+      LayerConfigScope(enable_ebops=True, beta0=1e-5),
+    ):
+    model, layers, tensors = build_from_config(config)
+
 
 License
 -------

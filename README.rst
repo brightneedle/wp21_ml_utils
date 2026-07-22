@@ -72,8 +72,7 @@ Config-driven model building
 Model graphs can be described in YAML. The top-level sections are:
 
 - ``inputs``: named Keras inputs with their tensor shapes.
-- ``layers``: ordered layer nodes. Each node has an ``class``, one or more
-  ``inputs``, and optional ``params`` passed to the layer constructor.
+- ``layers``: ordered layer nodes. Each node has an ``class``, one or more ``inputs``, and optional ``params`` passed to the layer constructor. Note that HGQ2 layer classes must be prefixed with ``hgq>``.
 - ``outputs``: named tensors to expose as model outputs, with optional loss
   and loss-weight settings used by ``compile_from_config``.
 - ``optimiser``: a Keras optimiser name plus constructor parameters.
@@ -84,61 +83,66 @@ Example configuration:
 .. code-block:: yaml
 
    inputs:
-     cells:
-       shape: [null, 4]  # pt, eta, phi, layer
+    cells:
+      shape: [null, 4] # pt eta phi layer
 
-   layers:
-     encode_cells:
-       class: EncodeCellEt
-       inputs: cells
-       params:
-         encoding:
-           class_name: QuadLinearQuantiser
-           config:
-             bits: 6
-             trainable: true
+  layers:
+    encode_cells:
+      class: EncodeCellEt
+      inputs: [cells]
+      params:
+        encoder_layer: QuadLinearQuantiser
+        encoder_config:
+          trainable: true
 
-     towers:
-       class: VectorsToImage
-       inputs: encode_cells
-       params:
-         return_layers: true
-         filter_layers: [0, 1, 2, 3, 4, 5]
+    towers:
+      class: VectorsToImage
+      inputs: [encode_cells]
+      params:
+        return_layers: true
+        filter_layers: [0, 1, 2, 3, 4, 5]
 
-     pileup:
-       class: PileupCNN
-       inputs: towers
+    pileup:
+      class: PileupCNN
+      inputs: [towers]
 
-     jets:
-       class: ConeJet
-       inputs: pileup
-       params:
-         max_jets: 20
+    jets:
+      class: ConeJet
+      inputs: [pileup]
 
-     calib:
-       class: CalibrationMLP
-       inputs: jets
+    calib:
+      class: CalibrationMLP
+      inputs: [jets]
 
-     leading_pt:
-       class: NthLeadingPt
-       inputs: calib
-       params:
-         index: 1
+    pt_1:
+      class: NthLeadingPt
+      inputs: [calib]
+      params:
+        index: 1
 
-   outputs:
-     leading_pt:
-       loss: mse
-     calib:
-       loss: CalibrationLoss
-       loss_weight: 0.5
+    pt_4:
+      class: NthLeadingPt
+      inputs: [calib]
+      params:
+        index: 4
 
-   optimiser:
-     class: adam
-     params:
-       learning_rate: 0.001
-       clipnorm: 1.0
+  outputs:
+    pt_1:
+      loss: mse
+    pt_4:
+      loss: MeanAbsoluteError
+      loss_weight: 0.5
+    calib:
+      loss: CalibrationLoss
 
-   random_state: 42
+  optimiser:
+    class: adam
+    params:
+      learning_rate: 0.001
+      clipnorm: 1.
+
+  random_state: 42
+
 
 Build and compile the model from that config:
 

@@ -7,10 +7,9 @@ layers:
     class: EncodeCellEt
     inputs: [cells]
     params:
-      encoding:
-        class_name: QuadLinearQuantiser
-        config:
-          trainable: true
+      encoder_layer: QuadLinearQuantiser
+      encoder_config:
+        trainable: true
 
   towers:
     class: VectorsToImage

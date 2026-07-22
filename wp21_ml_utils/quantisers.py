@@ -1,5 +1,3 @@
-from typing import Callable
-
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.initializers import Constant
@@ -288,28 +286,23 @@ class FlexibleQuantiser(BaseQuantiser):
 
 @register_keras_serializable("wp21_ml_utils")
 class EncodeCellEt(Layer):
-    def __init__(self, encoding: Callable, **kwargs):
+    def __init__(self, encoder_layer: str, encoder_config: dict = None, **kwargs):
         super().__init__(**kwargs)
-        self.encoding = encoding
+        self.encoder_layer = encoder_layer
+        self.encoder_config = encoder_config or {}
+        self.encoder = tf.keras.utils.deserialize_keras_object(
+            {"class_name": encoder_layer, "config": encoder_config}
+        )
 
     def call(self, x):
         components = unpack_momenta(x)
         et = components[0]
-        encoded_et = self.encoding(et)
+        encoded_et = self.encoder(et)
         return tf.concat([encoded_et, *components[1:]], axis=-1)
 
     def get_config(self):
         config = super().get_config()
         config.update(
-            {"encoding": tf.keras.utils.serialize_keras_object(self.encoding)}
+            {"encoder_layer": self.encoder_layer, "encoder_config": self.encoder_config}
         )
         return config
-
-    @classmethod
-    def from_config(cls, config):
-        custom_objects = tf.keras.utils.get_custom_objects()
-        encoding_config = config["encoding"]
-        config["encoding"] = tf.keras.utils.deserialize_keras_object(
-            encoding_config, custom_objects=custom_objects
-        )
-        return cls(**config)

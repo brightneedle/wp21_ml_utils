@@ -307,3 +307,39 @@ def test_build_from_custom_object():
     update_custom_objects({"CustomLayer": CustomLayer})
 
     model, _, _ = build_from_config(config)
+
+
+def test_build_from_native_object():
+    from wp21_ml_utils.model import build_from_config
+
+    config = {
+        "inputs": {
+            "input": {
+                "shape": [32, 32, 1],
+            },
+        },
+        "layers": {
+            "conv1": {
+                "class": "Conv2D",
+                "inputs": ["input"],
+                "params": {"filters": 8, "kernel_size": 3},
+            },
+            "flatten": {
+                "class": "Flatten",
+                "inputs": ["conv1"],
+            },
+            "fc2": {
+                "class": "hgq>QDense",
+                "inputs": ["flatten"],
+                "params": {"units": 32},
+            },
+        },
+        "outputs": {
+            "fc2": {},
+        },
+    }
+
+    model, _, _ = build_from_config(config)
+
+
+test_build_from_config()

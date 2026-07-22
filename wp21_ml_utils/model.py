@@ -36,6 +36,19 @@ def load_config(path) -> dict:
     return yaml.safe_load(open(path))
 
 
+def build_layer(class_name, params):
+    custom = tf.keras.utils.get_custom_objects()
+
+    if class_name in custom:
+        cls = custom[class_name]
+    elif hasattr(tf.keras.layers, class_name):
+        cls = getattr(tf.keras.layers, class_name)
+    else:
+        raise ValueError(f"Unknown layer '{class_name}'")
+
+    return cls(**params)
+
+
 def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
     random_state = int(config.get("random_state", 42))
 
@@ -67,9 +80,7 @@ def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
 
         params = node.get("params", {}) or {}
 
-        layer = tf.keras.utils.deserialize_keras_object(
-            {"class_name": class_name, "config": params},
-        )
+        layer = build_layer(class_name, params)
         layers_dict[node_name] = layer
         tensor_dict[node_name] = layer(x)
 

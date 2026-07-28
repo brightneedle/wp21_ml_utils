@@ -12,6 +12,35 @@ from hgq.layers import QDense, QBatchNormDense
 
 @register_keras_serializable(package="custom")
 class DenseNeuralNetwork(Layer):
+    """
+    Configurable stack of dense layers with optional HGQ and regularisation.
+
+    Builds a feed-forward network from ``hidden_layer_sizes``. Standard Keras
+    ``Dense`` layers are used by default; when ``use_hgq`` is enabled, the
+    corresponding HGQ ``QDense`` or ``QBatchNormDense`` layers are used
+    instead. Batch normalisation and dropout are applied after every hidden
+    layer when requested.
+
+    The layer is registered for Keras serialisation under the ``custom``
+    package, so it can be saved as part of a model configuration.
+
+    Parameters
+    ----------
+    hidden_layer_sizes : list[int]
+        Number of units in each hidden layer. An empty list produces an
+        identity sequential network.
+    activation : str
+        Activation applied to each hidden layer.
+    use_hgq : bool
+        Whether to use HGQ quantised dense layers.
+    dropout : float, default=0.0
+        Dropout rate applied after each hidden layer. Set to zero to disable
+        dropout.
+    batch_norm : bool, default=False
+        Whether to apply batch normalisation to each hidden layer. With
+        standard Keras layers, normalisation is followed by ``activation``.
+    """
+
     def __init__(
         self,
         hidden_layer_sizes: list[int],

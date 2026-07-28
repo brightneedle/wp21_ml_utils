@@ -56,6 +56,7 @@ Core modules
 - ``clustering.py``: cone-based jet reconstruction with ``ConeJet``.
 - ``calibration.py``: transverse-momentum calibration with
   ``CalibrationMLP``.
+- ``sequential.py``: simple, configurable dense and convolutional neural-network blocks.
 - ``layers.py``: reusable Keras layer components such as eta-phi padding,
   symmetry-aware convolutions, local-maximum masks, vector sums, and monotonic
   dense layers.

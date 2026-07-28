@@ -81,6 +81,7 @@ def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
         )
 
         params = node.get("params", {}) or {}
+        params.update({"name": node_name})
 
         layer = build_layer(class_name, params)
         layers_dict[node_name] = layer

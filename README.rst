@@ -74,7 +74,7 @@ Model graphs can be described in YAML. The top-level sections are:
 
 - ``inputs``: named Keras inputs with their tensor shapes.
 - ``layers``: ordered layer nodes. Each node has an ``class``, one or more ``inputs``, and optional ``params`` passed to the layer constructor. Note that HGQ2 layer classes must be prefixed with ``hgq>``.
-- ``outputs``: named tensors to expose as model outputs, with optional loss
+- ``outputs``: named tensors to expose as model outputs, with optional loss, metrics,
   and loss-weight settings used by ``compile_from_config``.
 - ``optimiser``: a Keras optimiser name plus constructor parameters.
 - ``random_state``: TensorFlow seed used during model construction.
@@ -85,7 +85,7 @@ Example configuration:
 
    inputs:
     cells:
-      shape: [null, 4] # pt eta phi layer
+      shape: [null, 4] # var x (pt eta phi layer)
 
   layers:
     encode_cells:
@@ -130,9 +130,13 @@ Example configuration:
   outputs:
     pt_1:
       loss: mse
+      metrics:
+        - mae
     pt_4:
       loss: MeanAbsoluteError
       loss_weight: 0.5
+      metrics:
+        - mse
     calib:
       loss: CalibrationLoss
 

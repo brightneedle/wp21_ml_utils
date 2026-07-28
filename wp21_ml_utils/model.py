@@ -94,11 +94,12 @@ def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
     return model, layers_dict, tensor_dict
 
 
-def compile_from_config(model: tf.keras.Model, config: dict) -> tf.keras.Model:
+def compile_from_config(model: tf.keras.Model, config: dict):
     output_spec = config.get("outputs", {})
 
     losses = {}
     loss_weights = {}
+    metrics = {}
     for name, spec in output_spec.items():
         loss_name = spec.get("loss", None)
         obj = tf.keras.utils.get_custom_objects().get(loss_name)
@@ -109,6 +110,16 @@ def compile_from_config(model: tf.keras.Model, config: dict) -> tf.keras.Model:
 
         loss_weights[name] = spec.get("loss_weight", 1.0)
 
+        metric_list = spec.get("metrics", [])
+        if metric_list:
+            metrics[name] = []
+            for metric_name in metric_list:
+                obj = tf.keras.utils.get_custom_objects().get(metric_name)
+                if obj is not None:
+                    metrics[name].append(obj() if isinstance(obj, type) else obj)
+                else:
+                    metrics[name].append(tf.keras.metrics.get(metric_name))
+
     optimiser_config = config.get("optimiser", {"class": "adam", "params": {}})
     optimiser = tf.keras.optimizers.deserialize(
         {"class_name": optimiser_config["class"], "config": optimiser_config["params"]}
@@ -118,9 +129,9 @@ def compile_from_config(model: tf.keras.Model, config: dict) -> tf.keras.Model:
         optimizer=optimiser,
         loss=losses if losses else None,
         loss_weights=loss_weights if loss_weights else None,
+        metrics=metrics,
         jit_compile=False,
     )
-    return model
 
 
 def load_model(path, compile: bool = True) -> tf.keras.Model:

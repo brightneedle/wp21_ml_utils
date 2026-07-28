@@ -67,7 +67,7 @@ def polar_to_cartesian(
 
 def cartesian_to_polar(
     px: tf.Tensor, py: tf.Tensor, pz: tf.Tensor
-) -> tuple[tf.Tensor, tf]:
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Converts momentum coordinates from (px, py, pz) to (pT, η, φ).
 

@@ -227,6 +227,7 @@ def test_converters():
 
 def test_coordinates():
     import numpy as np
+    import tensorflow as tf
     from wp21_ml_utils.utils import (
         unpack_momenta,
         polar_to_cartesian,
@@ -235,7 +236,7 @@ def test_coordinates():
 
     np.random.seed(42)
 
-    px, py, pz = unpack_momenta(np.random.normal(size=(128, 10, 3)))
+    px, py, pz = unpack_momenta(tf.random.normal(shape=(128, 10, 3)))
 
     pt, eta, phi = cartesian_to_polar(px, py, pz)
 
@@ -271,7 +272,7 @@ def test_build_from_config():
     model.evaluate(
         x={k: train_data[k] for k in config["inputs"]},
         y={k: train_data[k] for k in config["outputs"]},
-        verbose=0,
+        verbose=1,
     )
 
     save_to = OUTPUT_DIR / "test_pipeline.keras"
@@ -348,7 +349,7 @@ def test_build_from_dnn():
     config = {
         "inputs": {
             "input": {
-                "shape": [32, 32, 1],
+                "shape": [32],
             },
         },
         "layers": {
@@ -359,6 +360,7 @@ def test_build_from_dnn():
                     "hidden_layer_sizes": [64, 32],
                     "activation": "relu",
                     "use_hgq": True,
+                    "batch_norm": True,
                 },
             },
             "output_layer": {
@@ -374,3 +376,45 @@ def test_build_from_dnn():
     }
 
     build_from_config(config)
+
+
+# def test_build_from_cnn():
+#     from wp21_ml_utils.model import build_from_config
+
+#     config = {
+#         "inputs": {
+#             "input": {
+#                 "shape": [32, 32, 1],
+#             },
+#         },
+#         "layers": {
+#             "cnn": {
+#                 "class": "ConvolutionalNeuralNetwork",
+#                 "inputs": ["input"],
+#                 "params": {
+#                     "filter_sizes": [8, 16],
+#                     "kernel_sizes": [3, 3],
+#                     "pooling_sizes": [2, 2],
+#                     "pooling": "max",
+#                     "padding": "same",
+#                     "activation": "relu",
+#                     "use_hgq": True,
+#                 },
+#             },
+#             "flatten": {
+#                 "class": "Flatten",
+#                 "inputs": ["cnn"],
+#             },
+#             "output_layer": {
+#                 "class": "hgq>QDense",
+#                 "inputs": ["flatten"],
+#                 "params": {"units": 1},
+#                 "activation": "sigmoid",
+#             },
+#         },
+#         "outputs": {
+#             "output_layer": {},
+#         },
+#     }
+
+#     build_from_config(config)

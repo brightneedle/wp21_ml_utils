@@ -44,10 +44,14 @@ layers:
 
 outputs:
   pt_1:
-     loss: mse
+    loss: mse
+    metrics:
+      - mae
   pt_4:
     loss: MeanAbsoluteError
     loss_weight: 0.5
+    metrics:
+      - mae
   calib:
     loss: CalibrationLoss
 

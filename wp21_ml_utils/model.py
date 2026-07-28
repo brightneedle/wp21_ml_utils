@@ -12,6 +12,7 @@ def update_custom_objects(custom_objects: dict = {}) -> None:
         quantisers,
         pileup,
         regularisers,
+        sequential,
     )
 
     for module in [
@@ -23,6 +24,7 @@ def update_custom_objects(custom_objects: dict = {}) -> None:
         quantisers,
         pileup,
         regularisers,
+        sequential,
     ]:
         for name in dir(module):
             obj = getattr(module, name)

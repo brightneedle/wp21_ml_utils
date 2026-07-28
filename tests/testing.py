@@ -339,7 +339,38 @@ def test_build_from_native_object():
         },
     }
 
-    model, _, _ = build_from_config(config)
+    build_from_config(config)
 
 
-test_build_from_config()
+def test_build_from_dnn():
+    from wp21_ml_utils.model import build_from_config
+
+    config = {
+        "inputs": {
+            "input": {
+                "shape": [32, 32, 1],
+            },
+        },
+        "layers": {
+            "dnn": {
+                "class": "DenseNeuralNetwork",
+                "inputs": ["input"],
+                "params": {
+                    "hidden_layer_sizes": [64, 32],
+                    "activation": "relu",
+                    "use_hgq": True,
+                },
+            },
+            "output_layer": {
+                "class": "hgq>QDense",
+                "inputs": ["dnn"],
+                "params": {"units": 1},
+                "activation": "sigmoid",
+            },
+        },
+        "outputs": {
+            "output_layer": {},
+        },
+    }
+
+    build_from_config(config)

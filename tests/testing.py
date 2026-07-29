@@ -354,7 +354,7 @@ def test_build_from_dnn():
         },
         "layers": {
             "dnn": {
-                "class": "DenseNeuralNetwork",
+                "class": "DenseLayers",
                 "inputs": ["input"],
                 "params": {
                     "hidden_layer_sizes": [64, 32],
@@ -378,43 +378,42 @@ def test_build_from_dnn():
     build_from_config(config)
 
 
-# def test_build_from_cnn():
-#     from wp21_ml_utils.model import build_from_config
+def test_build_from_cnn():
+    from wp21_ml_utils.model import build_from_config
 
-#     config = {
-#         "inputs": {
-#             "input": {
-#                 "shape": [32, 32, 1],
-#             },
-#         },
-#         "layers": {
-#             "cnn": {
-#                 "class": "ConvolutionalNeuralNetwork",
-#                 "inputs": ["input"],
-#                 "params": {
-#                     "filter_sizes": [8, 16],
-#                     "kernel_sizes": [3, 3],
-#                     "pooling_sizes": [2, 2],
-#                     "pooling": "max",
-#                     "padding": "same",
-#                     "activation": "relu",
-#                     "use_hgq": True,
-#                 },
-#             },
-#             "flatten": {
-#                 "class": "Flatten",
-#                 "inputs": ["cnn"],
-#             },
-#             "output_layer": {
-#                 "class": "hgq>QDense",
-#                 "inputs": ["flatten"],
-#                 "params": {"units": 1},
-#                 "activation": "sigmoid",
-#             },
-#         },
-#         "outputs": {
-#             "output_layer": {},
-#         },
-#     }
+    config = {
+        "inputs": {
+            "input": {
+                "shape": [32, 32, 1],
+            },
+        },
+        "layers": {
+            "cnn": {
+                "class": "Conv2DPoolingLayers",
+                "inputs": ["input"],
+                "params": {
+                    "filter_sizes": [8, 16],
+                    "kernel_sizes": [3, 3],
+                    "pooling_sizes": [2, 2],
+                    "pooling": "max",
+                    "activation": "relu",
+                    "use_hgq": True,
+                },
+            },
+            "flatten": {
+                "class": "Flatten",
+                "inputs": ["cnn"],
+            },
+            "output_layer": {
+                "class": "hgq>QDense",
+                "inputs": ["flatten"],
+                "params": {"units": 1},
+                "activation": "sigmoid",
+            },
+        },
+        "outputs": {
+            "output_layer": {},
+        },
+    }
 
-#     build_from_config(config)
+    build_from_config(config)

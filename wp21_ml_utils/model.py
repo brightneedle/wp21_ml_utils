@@ -103,11 +103,20 @@ def compile_from_config(model: tf.keras.Model, config: dict):
     metrics = {}
     for name, spec in output_spec.items():
         loss_name = spec.get("loss", None)
+        loss_params = spec.get("params", {})
+
         obj = tf.keras.utils.get_custom_objects().get(loss_name)
-        if obj is not None:
-            losses[name] = obj() if isinstance(obj, type) else obj
+        if obj is None:
+            obj = tf.keras.losses.get(loss_name)
+
+        if isinstance(obj, type):
+            losses[name] = obj(**loss_params)
+        elif loss_params:
+            raise TypeError(
+                f"Loss '{loss_name}' does not accept constructor parameters)."
+            )
         else:
-            losses[name] = tf.keras.losses.get(loss_name)
+            losses[name] = obj
 
         loss_weights[name] = spec.get("loss_weight", 1.0)
 

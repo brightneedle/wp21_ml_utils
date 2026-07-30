@@ -54,6 +54,8 @@ outputs:
       - mae
   calib:
     loss: CalibrationLoss
+    params:
+      squared: false
 
 optimiser:
   class: adam

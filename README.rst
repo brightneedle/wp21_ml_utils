@@ -145,6 +145,8 @@ Example configuration:
          - mse
      calib:
        loss: CalibrationLoss
+       params:
+        sqaured: false
 
    optimiser:
      class: adam

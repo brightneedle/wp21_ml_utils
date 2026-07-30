@@ -106,15 +106,22 @@ def compile_from_config(model: tf.keras.Model, config: dict):
         loss_params = spec.get("params", {})
 
         obj = tf.keras.utils.get_custom_objects().get(loss_name)
+
+        if obj is None:
+            obj = getattr(tf.keras.losses, loss_name, None)
+
         if obj is None:
             obj = tf.keras.losses.get(loss_name)
 
         if isinstance(obj, type):
             losses[name] = obj(**loss_params)
         elif loss_params:
-            raise TypeError(
-                f"Loss '{loss_name}' does not accept constructor parameters)."
-            )
+            try:
+                losses[name] = obj.__class__(**loss_params)
+            except TypeError as e:
+                raise TypeError(
+                    f"Loss '{loss_name}' does not accept constructor parameters"
+                ) from e
         else:
             losses[name] = obj
 

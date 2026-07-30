@@ -4,15 +4,16 @@ wp21_ml_utils
 A compact TensorFlow/Keras utility package for HGQ-based ML studies on the
 Global Trigger.
 
-The package provides serialisable Keras layers, losses, regularisers, and
-configuration helpers for building detector-inspired pipelines that operate on
-both sparse object vectors and dense eta-phi images.
+The package provides serialisable Keras layers, callable network blocks,
+losses, regularisers, and configuration helpers for building detector-inspired
+pipelines that operate on both sparse object vectors and dense eta-phi images.
 
 Features
 --------
 
-- Custom Keras layers for quantisation, eta-phi image conversion, pileup
-  suppression, cone-jet reconstruction, and particle calibration.
+- Custom Keras layers and reusable callable network blocks for quantisation,
+  eta-phi image conversion, pileup suppression, cone-jet reconstruction,
+  particle calibration, and common dense/convolutional architectures.
 - Support for image-style event inputs, ``B x eta x phi x layer``, and
   object-vector inputs, ``B x num_vectors x (pt, eta, phi, ...)``.
 - YAML-driven model construction and compilation via
@@ -56,7 +57,8 @@ Core modules
 - ``clustering.py``: cone-based jet reconstruction with ``ConeJet``.
 - ``calibration.py``: transverse-momentum calibration with
   ``CalibrationMLP``.
-- ``sequential.py``: simple, configurable dense and convolutional-pooling neural-network blocks.
+- ``sequential.py``: reusable callable dense and convolutional-pooling network
+  blocks that can be referenced from YAML configurations.
 - ``layers.py``: reusable Keras layer components such as eta-phi padding,
   symmetry-aware convolutions, local-maximum masks, vector sums, and monotonic
   dense layers.
@@ -73,9 +75,13 @@ Config-driven model building
 Model graphs can be described in YAML. The top-level sections are:
 
 - ``inputs``: named Keras inputs with their tensor shapes.
-- ``layers``: ordered layer nodes. Each node has an ``class``, one or more ``inputs``, and optional ``params`` passed to the layer constructor. Note that HGQ2 layer classes must be prefixed with ``hgq>``.
-- ``outputs``: named tensors to expose as model outputs, with optional loss, metrics,
-  and loss-weight settings used by ``compile_from_config``.
+- ``layers``: ordered computation nodes. Each node has a ``class``, one or
+  more ``inputs``, and optional ``params`` passed to the constructor. The
+  ``class`` may be either a Keras ``Layer`` or a callable class that builds a
+  reusable computation block. Note that HGQ2 layer classes must be prefixed
+  with ``hgq>``.
+- ``outputs``: named tensors to expose as model outputs, with optional loss,
+  metrics, and loss-weight settings used by ``compile_from_config``.
 - ``optimiser``: a Keras optimiser name plus constructor parameters.
 - ``random_state``: TensorFlow seed used during model construction.
 
@@ -84,70 +90,82 @@ Example configuration:
 .. code-block:: yaml
 
    inputs:
-    cells:
-      shape: [null, 4] # var x (pt eta phi layer)
+     cells:
+       shape: [null, 4]  # var x (pt eta phi layer)
 
-  layers:
-    encode_cells:
-      class: EncodeCellEt
-      inputs: [cells]
-      params:
-        encoder_layer: QuadLinearQuantiser
-        encoder_config:
-          trainable: true
+   layers:
+     encode_cells:
+       class: EncodeCellEt
+       inputs: [cells]
+       params:
+         encoder_layer: QuadLinearQuantiser
+         encoder_config:
+           trainable: true
 
-    towers:
-      class: VectorsToImage
-      inputs: [encode_cells]
-      params:
-        return_layers: true
-        filter_layers: [0, 1, 2, 3, 4, 5]
+     towers:
+       class: VectorsToImage
+       inputs: [encode_cells]
+       params:
+         return_layers: true
+         filter_layers: [0, 1, 2, 3, 4, 5]
 
-    pileup:
-      class: PileupCNN
-      inputs: [towers]
+     pileup:
+       class: PileupCNN
+       inputs: [towers]
 
-    jets:
-      class: ConeJet
-      inputs: [pileup]
+     jets:
+       class: ConeJet
+       inputs: [pileup]
 
-    calib:
-      class: CalibrationMLP
-      inputs: [jets]
+     calib:
+       class: CalibrationMLP
+       inputs: [jets]
 
-    pt_1:
-      class: NthLeadingPt
-      inputs: [calib]
-      params:
-        index: 1
+     pt_1:
+       class: NthLeadingPt
+       inputs: [calib]
+       params:
+         index: 1
 
-    pt_4:
-      class: NthLeadingPt
-      inputs: [calib]
-      params:
-        index: 4
+     pt_4:
+       class: NthLeadingPt
+       inputs: [calib]
+       params:
+         index: 4
 
-  outputs:
-    pt_1:
-      loss: mse
-      metrics:
-        - mae
-    pt_4:
-      loss: MeanAbsoluteError
-      loss_weight: 0.5
-      metrics:
-        - mse
-    calib:
-      loss: CalibrationLoss
+   outputs:
+     pt_1:
+       loss: mse
+       metrics:
+         - mae
+     pt_4:
+       loss: MeanAbsoluteError
+       loss_weight: 0.5
+       metrics:
+         - mse
+     calib:
+       loss: CalibrationLoss
 
-  optimiser:
-    class: adam
-    params:
-      learning_rate: 0.001
-      clipnorm: 1.
+   optimiser:
+     class: adam
+     params:
+       learning_rate: 0.001
+       clipnorm: 1.
 
-  random_state: 42
+   random_state: 42
 
+Callable classes
+~~~~~~~~~~~~~~~~
+
+The model builder accepts both standard Keras ``Layer`` subclasses and
+callable Python classes. Callable classes encapsulate reusable computation
+blocks composed of multiple Keras layers. They are constructed once from the
+YAML parameters and invoked on their inputs during model construction.
+
+For example, ``DenseLayers`` and ``Conv2DPoolingLayers`` in
+``sequential.py`` are callable classes rather than Keras layers. When used in
+a configuration they expand into the corresponding sequence of Keras layers,
+rather than appearing as a single layer in the final model.
 
 Build and compile the model from that config:
 
@@ -167,39 +185,54 @@ Build and compile the model from that config:
    model.save("pipeline.keras")
    restored = load_model("pipeline.keras")
 
-The ``layer`` values in the YAML are resolved through either Keras custom objects or standard Keras layers.
-See the next section for how to register custom layers.
+The ``class`` values in the YAML are resolved through either registered custom
+objects or standard Keras layers.
 
-QAT can be enabled by calling ``build_from_config`` within the usual HGQ2 scope, for example:
+QAT can be enabled by calling ``build_from_config`` within the usual HGQ2
+scope, for example:
 
 .. code-block:: python
 
-  from hgq.config import LayerConfigScope, QuantizerConfigScope
+   from hgq.config import LayerConfigScope, QuantizerConfigScope
 
-  with (
-      QuantizerConfigScope(place="all", default_q_type="kbi", overflow_mode="SAT_SYM"),
-      QuantizerConfigScope(place="datalane", default_q_type="kif", overflow_mode="WRAP"),
-      LayerConfigScope(enable_ebops=True, beta0=1e-5),
-    ):
-    model, layers, tensors = build_from_config(config)
+   with (
+       QuantizerConfigScope(
+           place="all",
+           default_q_type="kbi",
+           overflow_mode="SAT_SYM",
+       ),
+       QuantizerConfigScope(
+           place="datalane",
+           default_q_type="kif",
+           overflow_mode="WRAP",
+       ),
+       LayerConfigScope(enable_ebops=True, beta0=1e-5),
+   ):
+       model, layers, tensors = build_from_config(config)
 
 Extending the package with custom layers
-----------------------------
-User-defined custom layers can be registered with ``update_custom_objects``.
+----------------------------------------
+
+User-defined custom layers and callable computation blocks can be registered
+with ``update_custom_objects``.
 
 .. code-block:: python
 
-  from wp21_ml_utils.model import update_custom_objects
+   from tensorflow.keras.layers import Layer
+   from wp21_ml_utils.model import update_custom_objects
 
-  class MyCustomLayer(Layer):
-    def call(self, inputs):
-        return inputs * 2
+   class MyCustomLayer(Layer):
+       def call(self, inputs):
+           return inputs * 2
 
-  update_custom_objects({"MyCustomLayer": MyCustomLayer})
+   update_custom_objects({"MyCustomLayer": MyCustomLayer})
 
-Registering the layer before calling ``build_from_config`` allows the layer to be referenced in the model configuration.
+Registering the object before calling ``build_from_config`` allows it to be
+referenced in the model configuration, whether it is a Keras ``Layer`` or a
+callable class.
 
 License
 -------
 
 BSD 2-clause
+```

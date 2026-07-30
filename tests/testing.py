@@ -252,18 +252,24 @@ def test_coordinates():
 
 def test_build_from_config():
     import numpy as np
-    from pprint import pprint
+    from hgq.config import LayerConfigScope, QuantizerConfigScope
+    from wp21_ml_utils.model import load_model
     from wp21_ml_utils.model import (
         load_config,
         build_from_config,
         compile_from_config,
-        load_model,
     )
 
     config = load_config(DATA_DIR / "test_model_config.yaml")
-    pprint(config)
 
-    model, _, _ = build_from_config(config)
+    with QuantizerConfigScope(
+        q_type="kbi", place="weight", overflow_mode="SAT_SYM", round_mode="RND"
+    ), QuantizerConfigScope(
+        q_type="kif", place="datalane", overflow_mode="WRAP", round_mode="RND"
+    ), LayerConfigScope(
+        enable_ebops=True, beta0=1e-5
+    ):
+        model, _, _ = build_from_config(config)
 
     compile_from_config(model, config)
 
@@ -282,7 +288,7 @@ def test_build_from_config():
 
 def test_build_from_custom_object():
     from tensorflow.keras.layers import Layer
-    from wp21_ml_utils.model import build_from_config, update_custom_objects
+    from wp21_ml_utils.model import build_from_config, update_custom_objects, load_model
 
     class CustomLayer(Layer):
         def call(self, inputs):
@@ -308,6 +314,9 @@ def test_build_from_custom_object():
     update_custom_objects({"CustomLayer": CustomLayer})
 
     model, _, _ = build_from_config(config)
+    save_to = OUTPUT_DIR / "test_custom.keras"
+    model.save(save_to)
+    load_model(save_to)
 
 
 def test_build_from_native_object():
@@ -344,7 +353,7 @@ def test_build_from_native_object():
 
 
 def test_build_from_dnn():
-    from wp21_ml_utils.model import build_from_config
+    from wp21_ml_utils.model import build_from_config, load_model
 
     config = {
         "inputs": {
@@ -375,11 +384,15 @@ def test_build_from_dnn():
         },
     }
 
-    build_from_config(config)
+    model, _, _ = build_from_config(config)
+
+    save_to = OUTPUT_DIR / "test_dnn.keras"
+    model.save(save_to)
+    load_model(save_to)
 
 
 def test_build_from_cnn():
-    from wp21_ml_utils.model import build_from_config
+    from wp21_ml_utils.model import build_from_config, load_model
 
     config = {
         "inputs": {
@@ -416,4 +429,7 @@ def test_build_from_cnn():
         },
     }
 
-    build_from_config(config)
+    model, _, _ = build_from_config(config)
+    save_to = OUTPUT_DIR / "test_cnn.keras"
+    model.save(save_to)
+    load_model(save_to)

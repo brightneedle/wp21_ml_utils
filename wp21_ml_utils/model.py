@@ -51,7 +51,7 @@ def build_layer(class_name, params):
     return cls(**params)
 
 
-def build_from_config(config: dict) -> (tf.keras.Model, dict, dict):
+def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
     random_state = int(config.get("random_state", 42))
 
     tf.random.set_seed(random_state)

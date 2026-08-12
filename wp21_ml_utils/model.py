@@ -1,5 +1,6 @@
 import tensorflow as tf
 import yaml
+import inspect
 
 
 def update_custom_objects(custom_objects: dict = {}) -> None:
@@ -48,6 +49,11 @@ def build_layer(class_name, params):
     else:
         raise ValueError(f"Unknown layer '{class_name}'")
 
+    signature = inspect.signature(cls.__init__)
+    if "name" in signature.parameters:
+        params["name"] = class_name
+        params.update({"name": class_name})
+
     return cls(**params)
 
 
@@ -81,7 +87,6 @@ def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
         )
 
         params = node.get("params", {}) or {}
-        params.update({"name": node_name})
 
         layer = build_layer(class_name, params)
         layers_dict[node_name] = layer

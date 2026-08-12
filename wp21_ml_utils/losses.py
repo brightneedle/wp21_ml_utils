@@ -76,49 +76,74 @@ def chamfer_distance(
     squared: bool = True,
     reduce_mean: bool = True,
     pt_weight: float = 1.0,
-    normalise: bool = False,
+    normalise_by_truth: bool = False,
+    normalise_by_multiplicity: bool = False,
     include_pred_to_true: bool = True,
 ) -> tf.Tensor:
     """
     Computes a masked Chamfer distance between particle collections.
 
-    For each particle, the nearest neighbour in the opposite collection is
-    identified and the corresponding distance accumulated. Optionally includes
-    both true→predicted and predicted→true matching directions.
+    Each particle in the ground-truth collection is matched to its nearest
+    predicted particle, and optionally each predicted particle is matched to
+    its nearest ground-truth particle. Invalid or padded particles are
+    excluded from the matching.
 
-    Supports momentum-magnitude normalisation and either squared or Euclidean
-    distances.
+    The distance between particles is defined by
+    :func:`masked_pairwise_distances` and can include a relative weighting
+    between the pT and momentum-space components. Distances may be computed
+    either as squared distances or Euclidean distances.
 
     Parameters
     ----------
     y_true : tf.Tensor
-        Ground-truth particle collection.
+        Ground-truth particle collection. The particle dimension is expected
+        to be the penultimate dimension, with particle features in the final
+        dimension.
 
     y_pred : tf.Tensor
-        Predicted particle collection.
+        Predicted particle collection with the same feature representation
+        as ``y_true``.
 
     squared : bool, default=True
-        If True, uses squared distances.
+        If True, use squared distances. If False, take the square root of the
+        squared distances to obtain Euclidean distances.
 
     reduce_mean : bool, default=True
-        If True, returns the batch mean. Otherwise returns one loss value
-        per event.
+        If True, return the mean Chamfer distance over the batch. If False,
+        return one loss value per event.
 
     pt_weight : float, default=1.0
-        Relative weighting of pT and momentum-space distance terms.
+        Relative weight applied to the pT component of the particle distance.
+        The precise distance definition is determined by
+        :func:`masked_pairwise_distances`.
 
-    normalise : bool, default=False
-        Normalises distances by the momentum magnitude of the matched
-        ground-truth particle.
+    normalise_by_truth : bool, default=False
+        If True, divide each matched distance by the squared momentum
+        magnitude of the corresponding ground-truth particle. For the
+        predicted-to-true term, the normalisation uses the momentum magnitude
+        of the nearest ground-truth particle.
+
+        This provides a relative rather than absolute momentum-space distance.
+        In particular, when ``squared=True`` the squared distance is divided
+        by the squared momentum magnitude.
+
+    normalise_by_multiplicity : bool, default=False
+        If True, normalise each matching direction by the number of valid
+        particles in that collection. This makes the contribution approximately
+        independent of the number of particles in an event.
 
     include_pred_to_true : bool, default=True
-        Includes the reverse matching direction in the Chamfer distance.
+        If True, include both ground-truth-to-predicted and
+        predicted-to-ground-truth matching terms, giving a symmetric Chamfer
+        distance. If False, only the ground-truth-to-predicted term is
+        included, making the distance asymmetric.
 
     Returns
     -------
     tf.Tensor
-        Scalar loss or per-example loss values depending on
-        ``reduce_mean``.
+        If ``reduce_mean=True``, a scalar containing the mean Chamfer distance
+        over the batch. Otherwise, a tensor containing one loss value per
+        event.
     """
     dists, mask = masked_pairwise_distances(y_true, y_pred, pt_weight=pt_weight)
 
@@ -134,7 +159,7 @@ def chamfer_distance(
             tf.math.is_inf(min_pred_to_true), 0.0, min_pred_to_true
         )
 
-    if normalise:
+    if normalise_by_truth:
         true_px, true_py, true_pz = polar_to_cartesian(*unpack_momenta(y_true[..., :3]))
         p_true_mag_sq = (
             tf.square(true_px) + tf.square(true_py) + tf.square(true_pz) + 1e-12
@@ -153,55 +178,87 @@ def chamfer_distance(
         if include_pred_to_true:
             min_pred_to_true = tf.sqrt(tf.maximum(min_pred_to_true, 1e-12))
 
-    loss_per_example = tf.reduce_sum(min_true_to_pred, axis=1) / (
-        tf.reduce_sum(T, axis=1) + 1e-6
-    )
-    if include_pred_to_true:
-        loss_per_example += tf.reduce_sum(min_pred_to_true, axis=1) / (
-            tf.reduce_sum(P, axis=1) + 1e-6
-        )
+    D_true_to_pred = tf.reduce_sum(min_true_to_pred, axis=1)
+    if normalise_by_multiplicity:
+        D_true_to_pred /= tf.maximum(tf.reduce_sum(T, axis=1), 1e-6)
 
-    return tf.reduce_mean(loss_per_example) if reduce_mean else loss_per_example
+    if include_pred_to_true:
+        D_pred_to_true = tf.reduce_sum(min_pred_to_true, axis=1)
+        if normalise_by_multiplicity:
+            D_pred_to_true /= tf.maximum(tf.reduce_sum(P, axis=1), 1e-6)
+
+        loss = D_true_to_pred + D_pred_to_true
+
+    else:
+        loss = D_true_to_pred
+
+    return tf.reduce_mean(loss) if reduce_mean else loss
 
 
 @register_keras_serializable("wp21_ml_utils")
 class ChamferLoss(Loss):
     """
-    Keras loss wrapper for particle-level Chamfer distance.
+    Keras loss implementing a masked Chamfer distance between particle
+    collections.
 
-    Measures the similarity between predicted and target particle
-    collections by matching each particle to its nearest neighbour in
-    momentum space. Supports asymmetric and symmetric variants of the
-    Chamfer distance as well as optional momentum normalisation.
+    The loss compares predicted and target particle collections by matching
+    each valid particle to its nearest neighbour in the opposite collection.
+    It supports both symmetric and asymmetric Chamfer distances, squared or
+    Euclidean distances, momentum-dependent normalisation, and normalisation
+    by particle multiplicity.
+
+    This loss is suitable for collections with padded or otherwise invalid
+    particle entries, which are ignored during the matching.
 
     Parameters
     ----------
     squared : bool, default=True
-        Uses squared distances when True.
+        If True, use squared distances. If False, use Euclidean distances.
 
     pt_weight : float, default=1.0
-        Relative weighting of pT and momentum-space distance terms.
+        Relative weight applied to the pT component of the particle distance.
+        The complete distance definition is provided by
+        :func:`masked_pairwise_distances`.
 
-    normalise : bool, default=False
-        Normalises distances by the momentum magnitude of the matched
-        target particle.
+    normalise_by_truth : bool, default=False
+        If True, normalise each matched distance by the squared momentum
+        magnitude of the corresponding ground-truth particle. For the
+        predicted-to-true term, the momentum magnitude of the nearest
+        ground-truth particle is used.
+
+    normalise_by_multiplicity : bool, default=False
+        If True, divide each matching direction by the number of valid
+        particles in the corresponding collection.
 
     include_pred_to_true : bool, default=True
-        Includes the predicted→true matching contribution.
+        If True, include both ground-truth-to-predicted and
+        predicted-to-ground-truth matching terms. If False, only the
+        ground-truth-to-predicted term is included.
+
+    **kwargs
+        Additional keyword arguments passed to
+        :class:`keras.losses.Loss`.
+
+    Notes
+    -----
+    The loss returns a scalar batch-averaged value, since ``call`` evaluates
+    :func:`chamfer_distance` with ``reduce_mean=True``.
     """
 
     def __init__(
         self,
         squared: bool = True,
         pt_weight: float = 1.0,
-        normalise: bool = False,
+        normalise_by_truth: bool = False,
+        normalise_by_multiplicity: bool = False,
         include_pred_to_true: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.squared = squared
         self.pt_weight = float(pt_weight)
-        self.normalise = normalise
+        self.normalise_by_truth = normalise_by_truth
+        self.normalise_by_multiplicity = normalise_by_multiplicity
         self.include_pred_to_true = include_pred_to_true
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -211,7 +268,8 @@ class ChamferLoss(Loss):
             squared=self.squared,
             reduce_mean=True,
             pt_weight=self.pt_weight,
-            normalise=self.normalise,
+            normalise_by_truth=self.normalise_by_truth,
+            normalise_by_multiplicity=self.normalise_by_multiplicity,
             include_pred_to_true=self.include_pred_to_true,
         )
         return loss
@@ -221,7 +279,8 @@ class ChamferLoss(Loss):
         config = {
             "squared": self.squared,
             "pt_weight": self.pt_weight,
-            "normalise": self.normalise,
+            "normalise_by_truth": self.normalise_by_truth,
+            "normalise_by_multiplicity": self.normalise_by_multiplicity,
             "include_pred_to_true": self.include_pred_to_true,
         }
         return {**base_config, **config}

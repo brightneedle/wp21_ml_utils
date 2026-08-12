@@ -24,17 +24,17 @@ Features
 Installation
 ------------
 
-From the repository root:
+The package is available via ``pypi``:
 
 .. code-block:: bash
 
-   pip install -e .
+   pip install wp21_ml_utils
 
-For development and testing, additional dependencies can be installed via:
+For development and testing, please clone and install locally via:
 
 .. code-block:: bash
 
-   pip install -e .[dev]
+   pip install -e wp21_ml_utils[dev]
 
 Dependencies
 ------------

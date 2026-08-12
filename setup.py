@@ -11,7 +11,7 @@ setup(
     packages=["wp21_ml_utils"],
     install_requires=["pyyaml", "tensorflow>=2.16", "HGQ2==0.1.8"],
     extras_require={
-        "dev": ["pytest", "matplotlib", "pre-commit", "scipy"],
+        "dev": ["pytest", "matplotlib", "pre-commit", "scipy", "twine"],
     },
     classifiers=[
         "Development Status :: 1 - Planning",

@@ -433,3 +433,116 @@ def test_build_from_cnn():
     save_to = OUTPUT_DIR / "test_cnn.keras"
     model.save(save_to)
     load_model(save_to)
+
+
+def test_extract_submodel():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.model import extract_submodel
+
+    inputs = tf.keras.Input(shape=(4,), name="input")
+    hidden = tf.keras.layers.Dense(8, activation="relu", name="hidden")(inputs)
+    output = tf.keras.layers.Dense(2, name="output")(hidden)
+
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+
+    submodel = extract_submodel(
+        model,
+        input_names=["hidden"],
+        output_names=["output"],
+    )
+
+    assert isinstance(submodel, tf.keras.Model)
+    assert submodel.input_shape == (None, 8)
+    assert submodel.output_shape == (None, 2)
+    assert submodel.name == f"{model.name}_submodel"
+
+    x = np.ones((3, 4), dtype=np.float32)
+
+    expected_hidden = model.get_layer("hidden")(x)
+    expected_output = model.get_layer("output")(expected_hidden)
+
+    actual_output = submodel(expected_hidden)["output"]
+
+    assert np.allclose(actual_output, expected_output)
+
+
+def test_extract_submodel_append_outputs():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.model import extract_submodel
+
+    inputs = tf.keras.Input(shape=(4,), name="input")
+    hidden = tf.keras.layers.Dense(8, activation="relu", name="hidden")(inputs)
+    output = tf.keras.layers.Dense(2, name="output")(hidden)
+
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+
+    submodel = extract_submodel(
+        model,
+        input_names=["hidden"],
+        output_names=["hidden"],
+        append_outputs=True,
+    )
+
+    assert len(submodel.inputs) == 1
+    assert submodel.inputs[0].shape == (None, 8)
+
+    assert len(submodel.outputs) == 2
+    assert submodel.outputs[0].shape == (None, 8)
+    assert submodel.outputs[1].shape == (None, 2)
+
+    x = tf.ones((3, 4))
+
+    expected_hidden = model.get_layer("hidden")(x)
+    expected_output = model.get_layer("output")(expected_hidden)
+
+    actual_outputs = submodel(expected_hidden)
+
+    assert np.allclose(actual_outputs["hidden"], expected_hidden)
+    assert np.allclose(actual_outputs["output"], expected_output)
+
+
+def test_extract_submodel_uses_original_outputs_by_default():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.model import extract_submodel
+
+    inputs = tf.keras.Input(shape=(4,), name="input")
+    hidden = tf.keras.layers.Dense(8, activation="relu", name="hidden")(inputs)
+    output = tf.keras.layers.Dense(2, name="output")(hidden)
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+
+    submodel = extract_submodel(model, input_names=["hidden"])
+
+    x = np.ones((3, 4), dtype=np.float32)
+    expected_hidden = model.get_layer("hidden")(x)
+    expected_output = model.get_layer("output")(expected_hidden)
+
+    assert submodel.input_shape == (None, 8)
+    assert np.allclose(submodel(expected_hidden)["output"], expected_output)
+
+
+def test_extract_submodel_appends_outputs_with_original_inputs():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.model import extract_submodel
+
+    inputs = tf.keras.Input(shape=(4,), name="input")
+    hidden = tf.keras.layers.Dense(8, activation="relu", name="hidden")(inputs)
+    output = tf.keras.layers.Dense(2, name="output")(hidden)
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+
+    submodel = extract_submodel(
+        model,
+        output_names=["hidden"],
+        append_outputs=True,
+    )
+
+    x = np.ones((3, 4), dtype=np.float32)
+    expected_hidden = model.get_layer("hidden")(x)
+    expected_output = model(x)
+    predictions = submodel([x])
+
+    assert np.allclose(predictions["hidden"], expected_hidden)
+    assert np.allclose(predictions["output"], expected_output)

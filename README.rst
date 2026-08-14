@@ -39,7 +39,7 @@ For development and testing, please clone and install locally via:
 Dependencies
 ------------
 
-- ``tensorflow[and-cuda]>=2.16``
+- ``tensorflow>=2.16``
 - ``HGQ2==0.1.8``
 - ``pyyaml``
 

@@ -125,13 +125,13 @@ Example configuration:
        class: NthLeadingPt
        inputs: [calib]
        params:
-         index: 1
+         index: 0
 
      pt_4:
        class: NthLeadingPt
        inputs: [calib]
        params:
-         index: 4
+         index: 3
 
    outputs:
      pt_1:

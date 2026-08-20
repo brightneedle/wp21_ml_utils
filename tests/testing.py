@@ -352,6 +352,40 @@ def test_build_from_native_object():
     build_from_config(config)
 
 
+def test_build_from_config_rejects_hanging_or_unconnected_nodes():
+    import pytest
+    from wp21_ml_utils.model import build_from_config
+
+    config = {
+        "inputs": {
+            "connected_input": {"shape": [1]},
+            "unconnected_input": {"shape": [1]},
+        },
+        "layers": {
+            "output_layer": {
+                "class": "Dense",
+                "inputs": ["connected_input"],
+                "params": {"units": 1},
+            },
+            "hanging_layer": {
+                "class": "Dense",
+                "inputs": ["connected_input"],
+                "params": {"units": 1},
+            },
+        },
+        "outputs": {"output_layer": {}},
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Hanging or unconnected nodes in model config: "
+            "hanging_layer, unconnected_input"
+        ),
+    ):
+        build_from_config(config)
+
+
 def test_build_from_dnn():
     from wp21_ml_utils.model import build_from_config, load_model
 
@@ -370,6 +404,7 @@ def test_build_from_dnn():
                     "activation": "relu",
                     "use_hgq": True,
                     "batch_norm": True,
+                    "l2_penalty": 1e-4,
                 },
             },
             "output_layer": {
@@ -411,6 +446,7 @@ def test_build_from_cnn():
                     "pooling": "max",
                     "activation": "relu",
                     "use_hgq": True,
+                    "l2_penalty": 1e-4,
                 },
             },
             "flatten": {

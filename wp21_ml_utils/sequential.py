@@ -36,6 +36,14 @@ class DenseLayers:
     batch_norm : bool, default=False
         Whether to apply batch normalisation to each hidden layer. With
         standard Keras layers, normalisation is followed by ``activation``.
+    l2_penalty : float, default=0.0
+        L2 regularisation penalty applied to the kernel and bias of each
+        dense layer. Set to zero to disable L2 regularisation.
+    l1_penalty : float, default=0.0
+        L1 regularisation penalty applied to the kernel and bias of each
+        dense layer. Set to zero to disable L1 regularisation.
+    name : str or None, default=None
+        Optional prefix added to the generated layer names.
     """
 
     def __init__(
@@ -155,6 +163,14 @@ class Conv2DPoolingLayers:
     dropout : float, default=0.0
         Dropout rate applied after each convolution/pooling block. Set to
         zero to disable dropout.
+    l2_penalty : float, default=0.0
+        L2 regularisation penalty applied to the kernel and bias of each
+        convolutional layer. Set to zero to disable L2 regularisation.
+    l1_penalty : float, default=0.0
+        L1 regularisation penalty applied to the kernel and bias of each
+        convolutional layer. Set to zero to disable L1 regularisation.
+    name : str or None, default=None
+        Optional prefix added to the generated layer names.
     """
 
     def __init__(

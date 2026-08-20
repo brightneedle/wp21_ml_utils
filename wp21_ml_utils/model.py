@@ -149,12 +149,35 @@ def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
     input_spec = config.get("inputs", {})
     output_spec = config.get("outputs", {})
 
+    layer_spec = config["layers"]
+    configured_nodes = set(input_spec) | set(layer_spec)
+    connected_nodes = set(output_spec)
+    pending_nodes = list(output_spec)
+
+    while pending_nodes:
+        node_name = pending_nodes.pop()
+        if node_name not in layer_spec:
+            continue
+
+        inputs = layer_spec[node_name]["inputs"]
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        for input_name in inputs:
+            if input_name not in connected_nodes:
+                connected_nodes.add(input_name)
+                pending_nodes.append(input_name)
+
+    disconnected_nodes = configured_nodes - connected_nodes
+    if disconnected_nodes:
+        names = ", ".join(sorted(disconnected_nodes))
+        raise ValueError(f"Hanging or unconnected nodes in model config: {names}")
+
     tensor_dict = {}
     for name, spec in input_spec.items():
         tensor_dict[name] = tf.keras.Input(shape=spec["shape"], name=name)
 
     layers_dict = {}
-    for node_name, node in config["layers"].items():
+    for node_name, node in layer_spec.items():
         class_name = node["class"]
 
         inputs = node["inputs"]

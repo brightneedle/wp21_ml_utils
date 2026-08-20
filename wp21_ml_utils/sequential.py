@@ -7,6 +7,7 @@ from tensorflow.keras.layers import (
     MaxPooling2D,
     AveragePooling2D,
 )
+from tensorflow.keras.regularizers import L1L2, L1, L2
 from hgq.layers import QDense, QBatchNormDense, QConv2D
 
 
@@ -44,6 +45,8 @@ class DenseLayers:
         use_hgq: bool,
         dropout: float = 0.0,
         batch_norm: bool = False,
+        l2_penalty: float = 0.0,
+        l1_penalty: float = 0.0,
         name: str = None,
     ):
         self.hidden_layer_sizes = list(hidden_layer_sizes)
@@ -51,24 +54,60 @@ class DenseLayers:
         self.dropout = dropout
         self.batch_norm = batch_norm
         self.use_hgq = use_hgq
+        self.l2_penalty = l2_penalty
+        self.l1_penalty = l1_penalty
+
+        if (self.l1_penalty > 0) & (self.l2_penalty > 0):
+            self.regularizer = L1L2(l1=self.l1_penalty, l2=self.l2_penalty)
+        elif self.l1_penalty > 0:
+            self.regularizer = L1(l1=self.l1_penalty)
+        elif self.l2_penalty > 0:
+            self.regularizer = L2(l2=self.l2_penalty)
+        else:
+            self.regularizer = None
 
         self.layer_list = []
         for units in self.hidden_layer_sizes:
             if self.use_hgq:
                 if self.batch_norm:
                     self.layer_list.append(
-                        QBatchNormDense(units, activation=self.activation)
+                        QBatchNormDense(
+                            units,
+                            activation=self.activation,
+                            kernel_regularizer=self.regularizer,
+                            bias_regularizer=self.regularizer,
+                        )
                     )
                 else:
-                    self.layer_list.append(QDense(units, activation=self.activation))
+                    self.layer_list.append(
+                        QDense(
+                            units,
+                            activation=self.activation,
+                            kernel_regularizer=self.regularizer,
+                            bias_regularizer=self.regularizer,
+                        )
+                    )
 
             else:
                 if self.batch_norm:
-                    self.layer_list.append(Dense(units))
+                    self.layer_list.append(
+                        Dense(
+                            units,
+                            kernel_regularizer=self.regularizer,
+                            bias_regularizer=self.regularizer,
+                        )
+                    )
                     self.layer_list.append(BatchNormalization())
                     self.layer_list.append(Activation(self.activation))
                 else:
-                    self.layer_list.append(Dense(units, activation=self.activation))
+                    self.layer_list.append(
+                        Dense(
+                            units,
+                            activation=self.activation,
+                            kernel_regularizer=self.regularizer,
+                            bias_regularizer=self.regularizer,
+                        )
+                    )
 
             if self.dropout > 0:
                 self.layer_list.append(Dropout(self.dropout))
@@ -128,6 +167,8 @@ class Conv2DPoolingLayers:
         use_hgq: bool,
         padding: str = "valid",
         dropout: float = 0.0,
+        l2_penalty: float = 0.0,
+        l1_penalty: float = 0.0,
         name=None,
     ):
         self.filter_sizes = list(filter_sizes)
@@ -136,8 +177,19 @@ class Conv2DPoolingLayers:
         self.pooling = pooling
         self.padding = padding
         self.activation = activation
-        self.dropout = dropout
         self.use_hgq = use_hgq
+        self.dropout = dropout
+        self.l2_penalty = l2_penalty
+        self.l1_penalty = l1_penalty
+
+        if (self.l1_penalty > 0) & (self.l2_penalty > 0):
+            self.regularizer = L1L2(l1=self.l1_penalty, l2=self.l2_penalty)
+        elif self.l1_penalty > 0:
+            self.regularizer = L1(l1=self.l1_penalty)
+        elif self.l2_penalty > 0:
+            self.regularizer = L2(l2=self.l2_penalty)
+        else:
+            self.regularizer = None
 
         if not (
             len(self.filter_sizes) == len(self.kernel_sizes) == len(self.pooling_sizes)
@@ -157,6 +209,8 @@ class Conv2DPoolingLayers:
                         kernel_size=kernel_size,
                         padding=self.padding,
                         activation=self.activation,
+                        kernel_regularizer=self.regularizer,
+                        bias_regularizer=self.regularizer,
                     )
                 )
             else:
@@ -166,6 +220,8 @@ class Conv2DPoolingLayers:
                         kernel_size=kernel_size,
                         padding=self.padding,
                         activation=self.activation,
+                        kernel_regularizer=self.regularizer,
+                        bias_regularizer=self.regularizer,
                     )
                 )
 

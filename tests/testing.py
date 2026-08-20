@@ -370,6 +370,7 @@ def test_build_from_dnn():
                     "activation": "relu",
                     "use_hgq": True,
                     "batch_norm": True,
+                    "l2_penalty": 1e-4,
                 },
             },
             "output_layer": {
@@ -411,6 +412,7 @@ def test_build_from_cnn():
                     "pooling": "max",
                     "activation": "relu",
                     "use_hgq": True,
+                    "l2_penalty": 1e-4,
                 },
             },
             "flatten": {

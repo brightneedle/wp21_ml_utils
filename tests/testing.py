@@ -217,7 +217,11 @@ def test_converters():
         eta_edges=np.array([-1.0, 0.0, 1.0], dtype=np.float32),
         phi_edges=np.array([-np.pi, 0.0, np.pi], dtype=np.float32),
     )
-    image2vector = ImageToVectors(deta=1.0, dphi=np.pi, max_vectors=x.shape[1])
+    image2vector = ImageToVectors(
+        eta_edge=1.0,
+        phi_edge=np.pi,
+        max_vectors=x.shape[1],
+    )
 
     y = image2vector(vector2image(x))
 

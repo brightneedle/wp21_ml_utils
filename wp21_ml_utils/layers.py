@@ -246,31 +246,48 @@ class TowerEtaPhiLayer(layers.Layer):
 
     Parameters
     ----------
-    deta : float
-        η bin width.
+    eta_edge : float
+        η coordinate of image edges.
 
-    dphi : float
-        φ bin width.
+    phi_edge : float
+        φ coordinate of image edges.
     """
 
-    def __init__(self, deta: float = 0.1, dphi: float = np.pi / 32, **kwargs):
+    def __init__(
+        self,
+        eta_edge: float = 2.5,
+        phi_edge: float = np.pi,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
-        self.deta = deta
-        self.dphi = dphi
+        self.eta_edge = eta_edge
+        self.phi_edge = phi_edge
 
     def call(self, image: TensorLike) -> tf.Tensor:
         B, E, P, _ = tf.unstack(tf.shape(image))
 
         eta_idxs = tf.tile(tf.reshape(tf.range(E), (1, E, 1, 1)), (B, 1, P, 1))
-        eta = tf.cast(2 * eta_idxs - E + 1, dtype=tf.float32) * self.deta / 2.0
+        eta = (
+            tf.cast(2 * eta_idxs - E + 1, dtype=tf.float32)
+            * tf.cast(self.eta_edge, tf.float32)
+            / tf.cast(E, tf.float32)
+        )
 
         phi_idxs = tf.tile(tf.reshape(tf.range(P), (1, 1, P, 1)), (B, E, 1, 1))
-        phi = tf.cast(2 * phi_idxs - P + 1, dtype=tf.float32) * self.dphi / 2.0
+        phi = (
+            tf.cast(2 * phi_idxs - P + 1, dtype=tf.float32)
+            * tf.cast(self.phi_edge, tf.float32)
+            / tf.cast(P, tf.float32)
+        )
 
         return eta, phi
 
     def get_config(self):
-        return {**super().get_config(), "deta": self.deta, "dphi": self.dphi}
+        return {
+            **super().get_config(),
+            "eta_edge": self.eta_edge,
+            "phi_edge": self.phi_edge,
+        }
 
 
 @register_keras_serializable("wp21_ml_utils")

@@ -24,6 +24,77 @@ def test_imports():
         importlib.import_module(module_name)
 
 
+def test_base_dataset_requires_prepare_datasets():
+    import pytest
+    from wp21_ml_utils.data import BaseDataset
+
+    with pytest.raises(NotImplementedError):
+        BaseDataset()()
+
+
+def test_base_dataset_prepares_train_and_validation_datasets():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.data import BaseDataset
+
+    class NpzDataset(BaseDataset):
+        def prepare_datasets(self):
+            with np.load(DATA_DIR / "train_data.npz") as data:
+                arrays = {name: data[name] for name in data.files}
+
+            train = {name: values[:8] for name, values in arrays.items()}
+            valid = {name: values[8:] for name, values in arrays.items()}
+            train_ds = tf.data.Dataset.from_tensor_slices(train).batch(4)
+            valid_ds = tf.data.Dataset.from_tensor_slices(valid).batch(2)
+            return train_ds, valid_ds
+
+    train_ds, valid_ds = NpzDataset()()
+
+    assert isinstance(train_ds, tf.data.Dataset)
+    assert isinstance(valid_ds, tf.data.Dataset)
+    assert train_ds.cardinality().numpy() == 2
+    assert valid_ds.cardinality().numpy() == 1
+
+    train_batch = next(iter(train_ds))
+    valid_batch = next(iter(valid_ds))
+
+    with np.load(DATA_DIR / "train_data.npz") as data:
+        assert set(train_batch) == set(data.files)
+        for name in data.files:
+            np.testing.assert_array_equal(train_batch[name].numpy(), data[name][:4])
+            np.testing.assert_array_equal(valid_batch[name].numpy(), data[name][8:])
+
+
+def test_base_objective_records_mean_squared_error():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.callbacks import BaseObjective
+
+    class MeanSquaredErrorObjective(BaseObjective):
+        def __init__(self, y_true, y_pred, name="mse"):
+            super().__init__(name=name)
+            self.y_true = tf.convert_to_tensor(y_true)
+            self.y_pred = tf.convert_to_tensor(y_pred)
+
+        def scoring_function(self) -> float:
+            return tf.reduce_mean(tf.square(self.y_true - self.y_pred))
+
+    with np.load(DATA_DIR / "train_data.npz") as data:
+        y_true = data["pt_1"]
+        y_pred = data["pt_4"]
+
+    objective = MeanSquaredErrorObjective(y_true, y_pred)
+    expected = float(np.mean(np.square(y_true - y_pred)))
+
+    assert np.isclose(objective.score(), expected)
+
+    logs = {}
+    objective.on_epoch_end(epoch=0, logs=logs)
+
+    assert set(logs) == {"mse"}
+    assert np.isclose(logs["mse"], expected)
+
+
 def test_pucnn():
     import numpy as np
     from tensorflow.keras import Sequential

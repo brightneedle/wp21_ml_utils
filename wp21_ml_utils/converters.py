@@ -31,10 +31,10 @@ class ImageToVectors(Layer):
             Maximum number of vectors to return per event. If None, all cells are used.
         min_pt (float):
             Minimum transverse momentum threshold below which vectors are zeroed out.
-        dphi (float):
-            Azimuthal bin size used in coordinate construction.
-        deta (float):
-            Pseudorapidity bin size used in coordinate construction.
+        eta_edge (float):
+            Absolute pseudorapidity coordinate of the image edges.
+        phi_edge (float):
+            Absolute azimuthal coordinate of the image edges.
         **kwargs:
             Standard Keras layer keyword arguments.
 
@@ -55,18 +55,21 @@ class ImageToVectors(Layer):
         self,
         max_vectors: int = None,
         min_pt: float = 0,
-        dphi: float = np.pi / 32,
-        deta: float = 0.1,
+        eta_edge: float = 2.5,
+        phi_edge: float = np.pi,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.max_vectors = max_vectors
         self.min_pt = min_pt
-        self.dphi = dphi
-        self.deta = deta
+        self.eta_edge = eta_edge
+        self.phi_edge = phi_edge
 
     def build(self, input_shape):
-        self.get_coords = TowerEtaPhiLayer(deta=self.deta, dphi=self.dphi)
+        self.get_coords = TowerEtaPhiLayer(
+            eta_edge=self.eta_edge,
+            phi_edge=self.phi_edge,
+        )
         super().build(input_shape)
 
     def call(self, image: TensorLike) -> tf.Tensor:
@@ -99,8 +102,8 @@ class ImageToVectors(Layer):
             **super().get_config(),
             "max_vectors": self.max_vectors,
             "min_pt": self.min_pt,
-            "deta": self.deta,
-            "dphi": self.dphi,
+            "eta_edge": self.eta_edge,
+            "phi_edge": self.phi_edge,
         }
 
 
@@ -194,7 +197,6 @@ class VectorsToImage(Layer):
 
         valid = (eta_bin >= 0) & (eta_bin < n_eta) & (phi_bin >= 0) & (phi_bin < n_phi)
 
-        # Optional layer filtering
         if layer is not None and self.filter_layers is not None:
             allowed = tf.reduce_any(
                 tf.equal(
@@ -213,7 +215,6 @@ class VectorsToImage(Layer):
         batch_idx = tf.tile(batch_idx, (1, N))
 
         if self.return_layers:
-            # Map physical layer IDs -> channel indices
             if self.filter_layers is not None:
                 layer_map = tf.lookup.StaticHashTable(
                     tf.lookup.KeyValueTensorInitializer(

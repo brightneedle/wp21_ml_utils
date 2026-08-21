@@ -18,6 +18,8 @@ Features
   object-vector inputs, ``B x num_vectors x (pt, eta, phi, ...)``.
 - YAML-driven model construction and compilation via
   ``wp21_ml_utils.model``.
+- Base classes for constructing paired training/validation datasets and
+  recording custom scalar objectives during Keras training.
 - Keras serialisation support for the package's custom layers, losses, and
   regularisers.
 
@@ -66,8 +68,57 @@ Core modules
   calibration, and pinball losses.
 - ``regularisers.py``: custom Keras regularisers for weight normalisation and
   sparsity.
+- ``data.py``: ``BaseDataset`` interface for constructing batched training and
+  validation datasets.
+- ``callbacks.py``: ``BaseObjective`` callback for recording user-defined
+  scalar scores in the Keras epoch logs.
 - ``utils.py``: numerical helpers for momenta, coordinates, medians, image
   augmentation, and layer initialisation.
+
+Datasets and custom objectives
+------------------------------
+
+Subclass ``BaseDataset`` to return batched training and validation datasets:
+
+.. code-block:: python
+
+   import numpy as np
+   import tensorflow as tf
+   from wp21_ml_utils.data import BaseDataset
+
+   class NpzDataset(BaseDataset):
+       def __init__(self, path):
+           self.path = path
+
+       def prepare_datasets(self):
+           with np.load(self.path) as data:
+               x, y = data["cells"], data["pt_1"]
+           split = int(0.8 * len(x))
+           make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices(
+               (x, y)
+           ).batch(32)
+           return make_ds(x[:split], y[:split]), make_ds(x[split:], y[split:])
+
+   train_ds, valid_ds = NpzDataset("train_data.npz")()
+
+Subclass ``BaseObjective`` to add a scalar score to the epoch logs under its
+``name``:
+
+.. code-block:: python
+
+   from wp21_ml_utils.callbacks import BaseObjective
+
+   class ValidationMSE(BaseObjective):
+       def __init__(self, x_valid, y_valid):
+           super().__init__(name="validation_mse")
+           self.x_valid = x_valid
+           self.y_valid = y_valid
+
+       def scoring_function(self):
+           y_pred = self.model.predict(self.x_valid, verbose=0)
+           return tf.reduce_mean(tf.square(self.y_valid - y_pred))
+
+   model.fit(train_ds, callbacks=[ValidationMSE(x_valid, y_valid)])
 
 Config-driven model building
 ----------------------------
@@ -171,7 +222,7 @@ rather than appearing as a single layer in the final model.
 
 Build and compile the model from that config:
 
-.. code-block:: python
+.. code-bloc:: python
 
    from wp21_ml_utils.model import (
        load_config,
@@ -237,4 +288,3 @@ License
 -------
 
 BSD 2-clause
-```

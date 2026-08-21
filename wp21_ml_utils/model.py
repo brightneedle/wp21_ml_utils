@@ -1,6 +1,7 @@
 import tensorflow as tf
 import yaml
 import inspect
+from contextlib import ExitStack
 
 
 def update_custom_objects(custom_objects: dict = {}) -> None:
@@ -126,7 +127,10 @@ def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
     ----------
     config:
         Model configuration dictionary. Expected to contain ``inputs``,
-        ``layers``, and ``outputs`` entries, with an optional ``random_state``.
+        ``layers``, and ``outputs`` entries, with optional ``random_state`` and
+        ``hgq_config`` entries. ``hgq_config`` may contain a list of
+        ``quantizer_scopes`` and a ``layer`` configuration. These are applied
+        while the configured layers are constructed.
 
     Returns
     -------
@@ -177,25 +181,37 @@ def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
         tensor_dict[name] = tf.keras.Input(shape=spec["shape"], name=name)
 
     layers_dict = {}
-    for node_name, node in layer_spec.items():
-        class_name = node["class"]
+    with ExitStack() as stack:
+        hgq_config = config.get("hgq_config")
+        if hgq_config is not None:
+            from hgq.config import LayerConfigScope, QuantizerConfigScope
 
-        inputs = node["inputs"]
-        if isinstance(inputs, str):
-            inputs = [inputs]
+            for scope_config in hgq_config.get("quantizer_scopes", []):
+                stack.enter_context(QuantizerConfigScope(**scope_config))
 
-        x = (
-            tensor_dict[inputs[0]]
-            if len(inputs) == 1
-            else [tensor_dict[i] for i in inputs]
-        )
+            layer_config = hgq_config.get("layer")
+            if layer_config is not None:
+                stack.enter_context(LayerConfigScope(**layer_config))
 
-        params = node.get("params", {}) or {}
-        params.update({"name": node_name})
+        for node_name, node in layer_spec.items():
+            class_name = node["class"]
 
-        layer = build_layer(class_name, params)
-        layers_dict[node_name] = layer
-        tensor_dict[node_name] = layer(x)
+            inputs = node["inputs"]
+            if isinstance(inputs, str):
+                inputs = [inputs]
+
+            x = (
+                tensor_dict[inputs[0]]
+                if len(inputs) == 1
+                else [tensor_dict[i] for i in inputs]
+            )
+
+            params = node.get("params", {}) or {}
+            params.update({"name": node_name})
+
+            layer = build_layer(class_name, params)
+            layers_dict[node_name] = layer
+            tensor_dict[node_name] = layer(x)
 
     model = tf.keras.Model(
         inputs={name: tensor_dict[name] for name in input_spec},

@@ -657,3 +657,47 @@ def test_extract_submodel_appends_outputs_with_original_inputs():
 
     assert np.allclose(predictions["hidden"], expected_hidden)
     assert np.allclose(predictions["output"], expected_output)
+
+
+def test_update_config():
+from wp21_ml_utils.model import update_config
+    config = {
+        "layers": {
+            "backbone": {
+                "params": {
+                    "hidden_layer_sizes": {
+                        "type": "list",
+                        "length": [1, 4],
+                        "values": [16, 32, 64, 128],
+                    },
+                    "activation": "relu",
+                }
+            }
+        },
+        "training": {
+            "batch_size": {
+                "type": "int",
+                "values": [64, 128, 256],
+            }
+        },
+    }
+
+    params = {
+        "layers_backbone_params_hidden_layer_sizes_length": 2,
+        "layers_backbone_params_hidden_layer_sizes_1": 32,
+        "layers_backbone_params_hidden_layer_sizes_2": 64,
+        "training_batch_size": 128,
+    }
+
+    updated_config = update_config(config, params)
+
+    assert updated_config["layers"]["backbone"]["params"]["hidden_layer_sizes"] == [
+        32,
+        64,
+    ]
+    assert updated_config["layers"]["backbone"]["params"]["activation"] == "relu"
+    assert updated_config["training"]["batch_size"] == 128
+
+    assert isinstance(
+        config["layers"]["backbone"]["params"]["hidden_layer_sizes"], dict
+    )

@@ -398,6 +398,7 @@ def extract_submodel(
         name=(f"{model.name}_submodel" if submodel_name is None else submodel_name),
     )
 
+
 # update config here
 def update_config(config: dict, params: dict) -> dict:
     """Return a concrete configuration using selected parameter values.

@@ -661,6 +661,7 @@ def test_extract_submodel_appends_outputs_with_original_inputs():
 
 def test_update_config():
     from wp21_ml_utils.model import update_config
+
     config = {
         "layers": {
             "backbone": {
@@ -671,14 +672,14 @@ def test_update_config():
                         "values": [16, 32, 64, 128],
                     },
                     "activation": "relu",
-                }
+                },
             }
         },
         "training": {
             "batch_size": {
                 "type": "int",
                 "values": [64, 128, 256],
-            }
+            },
         },
     }
 

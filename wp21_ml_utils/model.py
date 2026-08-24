@@ -399,7 +399,6 @@ def extract_submodel(
     )
 
 
-# update config here
 def update_config(config: dict, params: dict) -> dict:
     """Return a concrete configuration using selected parameter values.
 
@@ -429,9 +428,7 @@ def _update_node(node, params, prefix=""):
 
             if node["type"] == "list":
                 n_elements = params[f"{param_name}_length"]
-                return [
-                    params[f"{param_name}_{i + 1}"] for i in range(n_elements)
-                ]
+                return [params[f"{param_name}_{i + 1}"] for i in range(n_elements)]
 
             return params[param_name]
 

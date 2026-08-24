@@ -660,7 +660,7 @@ def test_extract_submodel_appends_outputs_with_original_inputs():
 
 
 def test_update_config():
-from wp21_ml_utils.model import update_config
+    from wp21_ml_utils.model import update_config
     config = {
         "layers": {
             "backbone": {

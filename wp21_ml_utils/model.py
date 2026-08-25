@@ -425,8 +425,7 @@ def update_config(config: dict, params: dict) -> dict:
                 if node["type"] == "list":
                     n_elements = params[f"{param_name}_length"]
                     return [
-                        params[f"{param_name}_{i + 1}"]
-                        for i in range(n_elements)
+                        params[f"{param_name}_{i + 1}"] for i in range(n_elements)
                     ]
 
                 return params[param_name]

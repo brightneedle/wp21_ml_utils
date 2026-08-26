@@ -767,3 +767,34 @@ def test_extract_submodel_appends_outputs_with_original_inputs():
 
     assert np.allclose(predictions["hidden"], expected_hidden)
     assert np.allclose(predictions["output"], expected_output)
+
+
+def test_update_config():
+    from wp21_ml_utils.model import update_config
+
+    config = {
+        "optimiser": {
+            "class": "adam",
+            "params": {
+                "learning_rate": 0.01,
+            },
+        },
+        "random_state": 42,
+    }
+
+    updates = {
+        "optimiser": {
+            "class": "adam",
+            "params": {
+                "learning_rate": 0.001,
+            },
+        }
+    }
+
+    updated_config = update_config(config, updates)
+
+    assert updated_config["optimiser"]["params"]["learning_rate"] == 0.001
+    assert updated_config["random_state"] == 42
+
+    # Original config is unchanged.
+    assert config["optimiser"]["params"]["learning_rate"] == 0.01

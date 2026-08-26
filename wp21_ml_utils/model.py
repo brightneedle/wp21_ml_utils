@@ -2,6 +2,7 @@ import tensorflow as tf
 import yaml
 import inspect
 from contextlib import ExitStack
+import copy
 
 
 def update_custom_objects(custom_objects: dict = {}) -> None:
@@ -412,3 +413,30 @@ def extract_submodel(
         outputs=dict(zip(selected_output_names, outputs)),
         name=(f"{model.name}_submodel" if submodel_name is None else submodel_name),
     )
+
+
+def update_config(config: dict, updates: dict, inplace: bool = False) -> dict:
+    """Update a model configuration.
+
+    Parameters
+    ----------
+    config : dict
+        Model configuration to update.
+    updates : dict
+        Updates using the same structure as the model configuration.
+    inplace : bool
+        If True, modify the supplied configuration directly.
+
+    Returns
+    -------
+    dict
+        Updated model configuration.
+    """
+    if inplace:
+        config.update(updates)
+        return config
+
+    new_config = copy.deepcopy(config)
+    new_config.update(updates)
+
+    return new_config

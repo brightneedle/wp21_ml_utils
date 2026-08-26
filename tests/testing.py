@@ -427,6 +427,116 @@ def test_build_from_native_object():
     build_from_config(config)
 
 
+def test_build_from_config_applies_hgq_config():
+    from wp21_ml_utils.model import build_from_config
+
+    config = {
+        "inputs": {"input": {"shape": [4]}},
+        "layers": {
+            "output": {
+                "class": "hgq>QDense",
+                "inputs": "input",
+                "params": {"units": 2},
+            }
+        },
+        "outputs": {"output": {}},
+        "hgq_config": {
+            "quantizer_scopes": [
+                {
+                    "place": "all",
+                    "default_q_type": "kbi",
+                    "overflow_mode": "SAT_SYM",
+                },
+                {
+                    "q_type": "kbi",
+                    "place": ["weight", "bias"],
+                    "b0": 8,
+                    "i0": 2,
+                },
+                {
+                    "place": "datalane",
+                    "default_q_type": "kif",
+                    "overflow_mode": "WRAP",
+                    "f0": 6,
+                },
+            ],
+            "layer": {"enable_ebops": True, "beta0": 1e-9},
+        },
+    }
+
+    _, layers, _ = build_from_config(config)
+    layer_config = layers["output"].get_config()
+
+    assert layer_config["enable_ebops"] is True
+    assert layer_config["beta0"]["config"]["value"] == 1e-9
+    assert layer_config["kq_conf"]["config"]["b0"] == 8
+    assert layer_config["kq_conf"]["config"]["i0"] == 2
+    assert layer_config["kq_conf"]["config"]["overflow_mode"] == "SAT_SYM"
+    assert layer_config["bq_conf"]["config"]["b0"] == 8
+    assert layer_config["iq_conf"]["config"]["f0"] == 6
+    assert layer_config["iq_conf"]["config"]["overflow_mode"] == "WRAP"
+
+
+def test_model_with_hgq_config_trains():
+    import numpy as np
+    from wp21_ml_utils.model import build_from_config, compile_from_config
+
+    config = {
+        "inputs": {"input": {"shape": [2]}},
+        "layers": {
+            "output": {
+                "class": "hgq>QDense",
+                "inputs": "input",
+                "params": {"units": 1, "use_bias": False},
+            }
+        },
+        "outputs": {"output": {"loss": "mse"}},
+        "optimiser": {"class": "SGD", "params": {"learning_rate": 0.05}},
+        "hgq_config": {
+            "quantizer_scopes": [
+                {
+                    "place": "all",
+                    "default_q_type": "kbi",
+                    "overflow_mode": "SAT_SYM",
+                },
+                {
+                    "q_type": "kbi",
+                    "place": ["weight", "bias"],
+                    "b0": 8,
+                    "i0": 2,
+                },
+                {
+                    "place": "datalane",
+                    "default_q_type": "kif",
+                    "overflow_mode": "WRAP",
+                    "f0": 6,
+                },
+            ],
+            "layer": {"enable_ebops": True, "beta0": 1e-9},
+        },
+    }
+    inputs = np.array(
+        [[-1.0, 0.5], [0.0, 1.0], [1.0, -0.5], [2.0, 1.0]],
+        dtype=np.float32,
+    )
+    targets = (2.0 * inputs[:, :1]) - inputs[:, 1:]
+
+    model, layers, _ = build_from_config(config)
+    compile_from_config(model, config)
+    kernel_before = layers["output"].kernel.numpy().copy()
+
+    losses = [
+        model.train_on_batch({"input": inputs}, {"output": targets}, return_dict=True)[
+            "loss"
+        ]
+        for _ in range(10)
+    ]
+
+    assert np.all(np.isfinite(losses))
+    assert losses[-1] < losses[0]
+    assert not np.allclose(layers["output"].kernel.numpy(), kernel_before)
+
+
 def test_build_from_config_rejects_hanging_or_unconnected_nodes():
     import pytest
     from wp21_ml_utils.model import build_from_config

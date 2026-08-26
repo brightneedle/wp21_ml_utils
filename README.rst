@@ -134,6 +134,8 @@ Model graphs can be described in YAML. The top-level sections are:
 - ``outputs``: named tensors to expose as model outputs, with optional loss,
   metrics, and loss-weight settings used by ``compile_from_config``.
 - ``optimiser``: a Keras optimiser name plus constructor parameters.
+- ``hgq_config``: optional HGQ2 quantizer and layer scopes applied by
+  ``build_from_config`` while constructing the model.
 - ``random_state``: TensorFlow seed used during model construction.
 
 Example configuration:
@@ -207,6 +209,25 @@ Example configuration:
 
    random_state: 42
 
+
+Build and compile the model from the configuration as follows:
+
+.. code-block:: python
+
+   from wp21_ml_utils.model import (
+       load_config,
+       build_from_config,
+       compile_from_config,
+       load_model,
+   )
+
+   config = load_config("model_config.yaml")
+   model, layers, tensors = build_from_config(config)
+   compile_from_config(model, config)
+
+The ``class`` values in the YAML are resolved through either registered custom
+objects or standard Keras layers.
+
 Callable classes
 ~~~~~~~~~~~~~~~~
 
@@ -220,48 +241,44 @@ For example, ``DenseLayers`` and ``Conv2DPoolingLayers`` in
 a configuration they expand into the corresponding sequence of Keras layers,
 rather than appearing as a single layer in the final model.
 
-Build and compile the model from that config:
+HGQ2 configuration
+~~~~~~~~~~~~~~~~~~
 
-.. code-bloc:: python
+``build_from_config`` can create the HGQ2 configuration scopes needed for
+quantization-aware training. Add an optional ``hgq_config`` mapping containing:
 
-   from wp21_ml_utils.model import (
-       load_config,
-       build_from_config,
-       compile_from_config,
-       load_model,
-   )
+- ``quantizer_scopes``: a list of keyword-argument mappings passed to
+  ``hgq.config.QuantizerConfigScope``. Scopes are entered in list order, so a
+  later, more specific scope can refine an earlier general scope.
+- ``layer``: a keyword-argument mapping passed to
+  ``hgq.config.LayerConfigScope``.
 
-   config = load_config("model_config.yaml")
-   model, layers, tensors = build_from_config(config)
-   compile_from_config(model, config)
+Both kinds of scope remain active while every configured layer is constructed.
+If ``hgq_config`` is absent, the builder creates no HGQ2 scope.
 
-   model.save("pipeline.keras")
-   restored = load_model("pipeline.keras")
+For example, this configuration sets general quantizer defaults, overrides
+the weight and bias precision, configures datalane quantization, and enables
+EBOPs on HGQ2 layers:
 
-The ``class`` values in the YAML are resolved through either registered custom
-objects or standard Keras layers.
+.. code-block:: yaml
 
-QAT can be enabled by calling ``build_from_config`` within the usual HGQ2
-scope, for example:
-
-.. code-block:: python
-
-   from hgq.config import LayerConfigScope, QuantizerConfigScope
-
-   with (
-       QuantizerConfigScope(
-           place="all",
-           default_q_type="kbi",
-           overflow_mode="SAT_SYM",
-       ),
-       QuantizerConfigScope(
-           place="datalane",
-           default_q_type="kif",
-           overflow_mode="WRAP",
-       ),
-       LayerConfigScope(enable_ebops=True, beta0=1e-5),
-   ):
-       model, layers, tensors = build_from_config(config)
+   hgq_config:
+     quantizer_scopes:
+       - place: all
+         default_q_type: kbi
+         overflow_mode: SAT_SYM
+         heterogeneous_axis: []
+       - q_type: kbi
+         place: [weight, bias]
+         b0: 8
+         i0: 2
+       - place: datalane
+         default_q_type: kif
+         overflow_mode: WRAP
+         f0: 6
+     layer:
+       enable_ebops: true
+       beta0: 1.0e-9
 
 Extending the package with custom layers
 ----------------------------------------

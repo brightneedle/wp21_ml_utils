@@ -399,45 +399,28 @@ def extract_submodel(
     )
 
 
-def update_config(config: dict, params: dict) -> dict:
-    """Return a concrete configuration using selected parameter values.
+def update_config(config: dict, updates: dict, inplace: bool = False) -> dict:
+    """Update a model configuration.
 
     Parameters
     ----------
     config : dict
-        Base configuration containing search specifications.
-    params : dict
-        Concrete parameter values selected by a searcher.
+        Model configuration to update.
+    updates : dict
+        Updates using the same structure as the model configuration.
+    inplace : bool
+        If True, modify the supplied configuration directly.
 
     Returns
     -------
     dict
-        A copy of the configuration with search specifications replaced
-        by the selected parameter values.
+        Updated model configuration.
     """
+    if inplace:
+        config.update(updates)
+        return config
 
-    def _update_node(node, prefix=""):
-        """Recursively replace search specifications with selected values."""
-        if isinstance(node, dict):
-            if "type" in node and ("values" in node or "range" in node):
-                param_name = prefix.rstrip("_")
+    new_config = copy.deepcopy(config)
+    new_config.update(updates)
 
-                if node["type"] == "list":
-                    n_elements = params[f"{param_name}_length"]
-                    return [params[f"{param_name}_{i + 1}"] for i in range(n_elements)]
-
-                return params[param_name]
-
-            return {
-                key: _update_node(value, f"{prefix}{key}_")
-                for key, value in node.items()
-            }
-
-        if isinstance(node, list):
-            return [_update_node(value, prefix) for value in node]
-
-        return node
-
-    config_copy = copy.deepcopy(config)
-
-    return _update_node(config_copy)
+    return new_config

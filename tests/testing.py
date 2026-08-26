@@ -663,42 +663,28 @@ def test_update_config():
     from wp21_ml_utils.model import update_config
 
     config = {
-        "layers": {
-            "backbone": {
-                "params": {
-                    "hidden_layer_sizes": {
-                        "type": "list",
-                        "length": [1, 4],
-                        "values": [16, 32, 64, 128],
-                    },
-                    "activation": "relu",
-                },
-            }
-        },
-        "training": {
-            "batch_size": {
-                "type": "int",
-                "values": [64, 128, 256],
+        "optimiser": {
+            "class": "adam",
+            "params": {
+                "learning_rate": 0.01,
             },
         },
+        "random_state": 42,
     }
 
-    params = {
-        "layers_backbone_params_hidden_layer_sizes_length": 2,
-        "layers_backbone_params_hidden_layer_sizes_1": 32,
-        "layers_backbone_params_hidden_layer_sizes_2": 64,
-        "training_batch_size": 128,
+    updates = {
+        "optimiser": {
+            "class": "adam",
+            "params": {
+                "learning_rate": 0.001,
+            },
+        }
     }
 
-    updated_config = update_config(config, params)
+    updated_config = update_config(config, updates)
 
-    assert updated_config["layers"]["backbone"]["params"]["hidden_layer_sizes"] == [
-        32,
-        64,
-    ]
-    assert updated_config["layers"]["backbone"]["params"]["activation"] == "relu"
-    assert updated_config["training"]["batch_size"] == 128
+    assert updated_config["optimiser"]["params"]["learning_rate"] == 0.001
+    assert updated_config["random_state"] == 42
 
-    assert isinstance(
-        config["layers"]["backbone"]["params"]["hidden_layer_sizes"], dict
-    )
+    # Original config is unchanged.
+    assert config["optimiser"]["params"]["learning_rate"] == 0.01

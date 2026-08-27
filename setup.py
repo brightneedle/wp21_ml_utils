@@ -2,12 +2,12 @@ from setuptools import setup
 
 setup(
     name="wp21_ml_utils",
-    version="0.1.0",
+    version="0.1.1",
     description="Custom TensorFlow/HGQ2 layers and models for the Global Trigger",
     url="https://github.com/brightneedle/wp21_ml_utils.git",
     author="Noah Clarke Hall",
     author_email="noah.clarkehall@cern.ch",
-    license="BSD 2-clause",
+    license="GNU Lesser General Public License v3 (LGPLv3)",
     packages=["wp21_ml_utils"],
     install_requires=["pyyaml", "tensorflow>=2.16", "HGQ2==0.1.8"],
     extras_require={
@@ -16,10 +16,12 @@ setup(
     classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: BSD License",
-        "Operating System :: POSIX :: Linux",
+        "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
 )

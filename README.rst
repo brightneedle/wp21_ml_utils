@@ -1,5 +1,5 @@
-wp21_ml_utils
-=============
+WP2.1 Machine Learning Utilities 🔧
+===================================
 
 A compact TensorFlow/Keras utility package for HGQ-based ML studies on the
 Global Trigger.

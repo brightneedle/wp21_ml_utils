@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="wp21_ml_utils",
-    version="0.1.1",
+    version="0.1.0",
     description="Custom TensorFlow/HGQ2 layers and models for the Global Trigger",
     url="https://github.com/brightneedle/wp21_ml_utils.git",
     author="Noah Clarke Hall",

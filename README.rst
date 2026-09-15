@@ -1,8 +1,7 @@
 WP2.1 Machine Learning Utilities 🔧
 ===================================
 
-A compact TensorFlow/Keras utility package for HGQ-based ML studies on the
-Global Trigger.
+A compact TensorFlow/Keras utility package for HGQ-based ML studies.
 
 The package provides serialisable Keras layers, callable network blocks,
 losses, regularisers, and configuration helpers for building detector-inspired
@@ -16,8 +15,7 @@ Features
   particle calibration, and common dense/convolutional architectures.
 - Support for image-style event inputs, ``B x eta x phi x layer``, and
   object-vector inputs, ``B x num_vectors x (pt, eta, phi, ...)``.
-- YAML-driven model construction and compilation via
-  ``wp21_ml_utils.model``.
+- YAML-driven model construction and compilation via ``wp21_ml_utils.model``.
 - Base classes for constructing paired training/validation datasets and
   recording custom scalar objectives during Keras training.
 - Keras serialisation support for the package's custom layers, losses, and
@@ -92,14 +90,14 @@ Subclass ``BaseDataset`` to return batched training and validation datasets:
 
        def prepare_datasets(self):
            with np.load(self.path) as data:
-               x, y = data["cells"], data["pt_1"]
+               x, y = data["X"], data["y"]
            split = int(0.8 * len(x))
            make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices(
                (x, y)
            ).batch(32)
            return make_ds(x[:split], y[:split]), make_ds(x[split:], y[split:])
 
-   train_ds, valid_ds = NpzDataset("train_data.npz")()
+   train_ds, valid_ds = NpzDataset("my_data.npz")()
 
 Subclass ``BaseObjective`` to add a scalar score to the epoch logs under its
 ``name``:
@@ -132,10 +130,13 @@ Model graphs can be described in YAML. The top-level sections are:
   class that builds a reusable computation block.
 - ``outputs``: named tensors to expose as model outputs, with optional loss,
   metrics, and loss-weight settings used by ``compile_from_config``.
-- ``optimiser``: a Keras optimiser name plus constructor parameters.
+- ``optimiser``: optional Keras optimiser name plus constructor parameters.
+  Defaults to ``adam``.
 - ``hgq_config``: optional HGQ2 quantizer and layer scopes applied by
-  ``build_from_config`` while constructing the model.
-- ``random_state``: TensorFlow seed used during model construction.
+  ``build_from_config`` while constructing the model. If not provided, no HGQ2
+  scopes are applied.
+- ``random_state``: optional random seed used during model construction.
+  Defaults to 42.
 
 Example configuration:
 

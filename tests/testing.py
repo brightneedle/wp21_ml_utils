@@ -446,6 +446,7 @@ def test_build_from_config_applies_hgq_config():
                     "place": "all",
                     "default_q_type": "kbi",
                     "overflow_mode": "SAT_SYM",
+                    "heterogeneous_axis": (-1,),
                 },
                 {
                     "q_type": "kbi",
@@ -642,11 +643,13 @@ def test_build_from_cnn():
                 "class": "QDense",
                 "inputs": ["flatten"],
                 "params": {"units": 1},
-                "activation": "sigmoid",
             },
         },
         "outputs": {
-            "output_layer": {},
+            "output_layer": {
+                "loss": "BinaryCrossentropy",
+                "params": {"from_logits": True},
+            },
         },
     }
 

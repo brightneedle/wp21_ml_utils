@@ -26,7 +26,7 @@ Features
 Installation
 ------------
 
-The package is available via ``pypi``:
+The package is available via PyPI:
 
 .. code-block:: bash
 
@@ -128,9 +128,8 @@ Model graphs can be described in YAML. The top-level sections are:
 - ``inputs``: named Keras inputs with their tensor shapes.
 - ``layers``: ordered computation nodes. Each node has a ``class``, one or
   more ``inputs``, and optional ``params`` passed to the constructor. The
-  ``class`` may be either a Keras ``Layer`` or a callable class that builds a
-  reusable computation block. Note that HGQ2 layer classes must be prefixed
-  with ``hgq>``.
+  ``class`` may be a Keras ``Layer`` (including an HGQ2 layer) or a callable
+  class that builds a reusable computation block.
 - ``outputs``: named tensors to expose as model outputs, with optional loss,
   metrics, and loss-weight settings used by ``compile_from_config``.
 - ``optimiser``: a Keras optimiser name plus constructor parameters.
@@ -143,69 +142,62 @@ Example configuration:
 .. code-block:: yaml
 
    inputs:
-     cells:
-       shape: [null, 4]  # var x (pt eta phi layer)
+     features:
+       shape: [50, 64, 6]
 
    layers:
-     encode_cells:
-       class: EncodeCellEt
-       inputs: [cells]
+     conv_block:
+       class: Conv2DPoolingLayers
+       inputs: [features]
        params:
-         encoder_layer: QuadLinearQuantiser
-         encoder_config:
-           trainable: true
+         filter_sizes: [4, 6, 8]
+         kernel_sizes: 3
+         pooling_sizes: 2
+         activation: relu
+         pooling: max
+         use_hgq: true
 
-     towers:
-       class: VectorsToImage
-       inputs: [encode_cells]
+     flatten:
+       class: Flatten
+       inputs: [conv_block]
+
+     logits:
+       class: QDense
+       inputs: [flatten]
        params:
-         return_layers: true
-         filter_layers: [0, 1, 2, 3, 4, 5]
-
-     pileup:
-       class: PileupCNN
-       inputs: [towers]
-
-     jets:
-       class: ConeJet
-       inputs: [pileup]
-
-     calib:
-       class: CalibrationMLP
-       inputs: [jets]
-
-     pt_1:
-       class: NthLeadingPt
-       inputs: [calib]
-       params:
-         index: 0
-
-     pt_4:
-       class: NthLeadingPt
-       inputs: [calib]
-       params:
-         index: 3
+         units: 1
 
    outputs:
-     pt_1:
-       loss: mse
-       metrics:
-         - mae
-     pt_4:
-       loss: MeanAbsoluteError
-       loss_weight: 0.5
-       metrics:
-         - mse
-     calib:
-       loss: CalibrationLoss
+     logits:
+       loss: BinaryCrossentropy
        params:
-        sqaured: false
+         from_logits: true
+       metrics:
+         - accuracy
 
    optimiser:
      class: adam
      params:
        learning_rate: 0.001
        clipnorm: 1.
+
+   hgq_config:
+     quantizer_scopes:
+       - place: all
+         default_q_type: kbi
+         overflow_mode: SAT_SYM
+         heterogeneous_axis: []
+       - q_type: kbi
+         place: [weight, bias]
+         b0: 8
+         i0: 2
+       - place: datalane
+         default_q_type: kif
+         overflow_mode: WRAP
+         f0: 6
+     layer:
+       enable_ebops: true
+       beta0: 1.0e-9
 
    random_state: 42
 
@@ -218,7 +210,6 @@ Build and compile the model from the configuration as follows:
        load_config,
        build_from_config,
        compile_from_config,
-       load_model,
    )
 
    config = load_config("model_config.yaml")
@@ -245,7 +236,7 @@ HGQ2 configuration
 ~~~~~~~~~~~~~~~~~~
 
 ``build_from_config`` can create the HGQ2 configuration scopes needed for
-quantization-aware training. Add an optional ``hgq_config`` mapping containing:
+quantisation-aware training. Add an optional ``hgq_config`` mapping containing:
 
 - ``quantizer_scopes``: a list of keyword-argument mappings passed to
   ``hgq.config.QuantizerConfigScope``. Scopes are entered in list order, so a
@@ -254,31 +245,9 @@ quantization-aware training. Add an optional ``hgq_config`` mapping containing:
   ``hgq.config.LayerConfigScope``.
 
 Both kinds of scope remain active while every configured layer is constructed.
-If ``hgq_config`` is absent, the builder creates no HGQ2 scope.
-
-For example, this configuration sets general quantizer defaults, overrides
-the weight and bias precision, configures datalane quantization, and enables
-EBOPs on HGQ2 layers:
-
-.. code-block:: yaml
-
-   hgq_config:
-     quantizer_scopes:
-       - place: all
-         default_q_type: kbi
-         overflow_mode: SAT_SYM
-         heterogeneous_axis: []
-       - q_type: kbi
-         place: [weight, bias]
-         b0: 8
-         i0: 2
-       - place: datalane
-         default_q_type: kif
-         overflow_mode: WRAP
-         f0: 6
-     layer:
-       enable_ebops: true
-       beta0: 1.0e-9
+The complete example above sets general quantiser defaults, overrides the
+weight and bias precision, configures datalane quantisation, and enables EBOPs
+on HGQ2 layers. If ``hgq_config`` is absent, the builder creates no HGQ2 scope.
 
 Extending the package with custom layers
 ----------------------------------------
@@ -304,4 +273,4 @@ callable class.
 License
 -------
 
-BSD 2-clause
+GNU Lesser General Public License v3 (LGPLv3)

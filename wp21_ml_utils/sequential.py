@@ -131,23 +131,25 @@ class Conv2DPoolingLayers:
     """
     Configurable stack of two-dimensional convolution and pooling layers.
 
-    Builds a convolutional network from ``filter_sizes``, ``kernel_sizes``,
-    and ``pooling_sizes``. Standard Keras ``Conv2D`` layers are used by
-    default; when ``use_hgq`` is enabled, the corresponding HGQ ``QConv2D``
-    layers are used instead. A max- or average-pooling layer is added after
-    each convolution when its matching pooling size is greater than one, and
-    dropout is applied after each block when requested.
+    ``filter_sizes`` determines the number of convolutional blocks. Kernel and
+    pooling sizes may be supplied either as a single value shared by every
+    block or as one value per block. Standard Keras ``Conv2D`` layers are used
+    by default; when ``use_hgq`` is enabled, HGQ ``QConv2D`` layers are used
+    instead. A max- or average-pooling layer is added after each convolution
+    whose pooling size is greater than one. Dropout is applied after each
+    block when requested.
 
     Parameters
     ----------
     filter_sizes : list[int]
         Number of filters in each convolutional layer.
-    kernel_sizes : list[int]
-        Kernel size for each convolutional layer. Must have the same length
-        as ``filter_sizes``.
-    pooling_sizes : list[int]
-        Pooling size after each convolutional layer. A value of one disables
-        pooling for that layer. Must have the same length as ``filter_sizes``.
+    kernel_sizes : int or list[int]
+        Kernel size for each convolutional layer. An integer is applied to every
+        layer; a list must have the same length as ``filter_sizes``.
+    pooling_sizes : int or list[int]
+        Pooling size after each convolutional layer. An integer is applied to
+        every layer, and a value of one disables pooling. A list must have the
+        same length as ``filter_sizes``.
     activation : str
         Activation applied to each convolutional layer.
     pooling : str
@@ -167,13 +169,20 @@ class Conv2DPoolingLayers:
         convolutional layer. Set to zero to disable L1 regularisation.
     name : str or None, default=None
         Optional prefix added to the generated layer names.
+
+    Raises
+    ------
+    ValueError
+        If list-valued kernel or pooling sizes do not match the number of
+        filters, or if a pooling operation other than ``max`` or ``average``
+        is requested for an enabled pooling layer.
     """
 
     def __init__(
         self,
         filter_sizes: list[int],
-        kernel_sizes: list[int],
-        pooling_sizes: list[int],
+        kernel_sizes: int | list[int],
+        pooling_sizes: int | list[int],
         activation: str,
         pooling: str,
         use_hgq: bool,
@@ -184,8 +193,16 @@ class Conv2DPoolingLayers:
         name=None,
     ):
         self.filter_sizes = list(filter_sizes)
-        self.kernel_sizes = list(kernel_sizes)
-        self.pooling_sizes = list(pooling_sizes)
+        self.kernel_sizes = (
+            [kernel_sizes] * len(self.filter_sizes)
+            if isinstance(kernel_sizes, int)
+            else list(kernel_sizes)
+        )
+        self.pooling_sizes = (
+            [pooling_sizes] * len(self.filter_sizes)
+            if isinstance(pooling_sizes, int)
+            else list(pooling_sizes)
+        )
         self.pooling = pooling
         self.padding = padding
         self.activation = activation

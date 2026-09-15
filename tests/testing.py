@@ -414,7 +414,7 @@ def test_build_from_native_object():
                 "inputs": ["conv1"],
             },
             "fc2": {
-                "class": "hgq>QDense",
+                "class": "QDense",
                 "inputs": ["flatten"],
                 "params": {"units": 32},
             },
@@ -434,7 +434,7 @@ def test_build_from_config_applies_hgq_config():
         "inputs": {"input": {"shape": [4]}},
         "layers": {
             "output": {
-                "class": "hgq>QDense",
+                "class": "QDense",
                 "inputs": "input",
                 "params": {"units": 2},
             }
@@ -485,7 +485,7 @@ def test_model_with_hgq_config_trains():
         "inputs": {"input": {"shape": [2]}},
         "layers": {
             "output": {
-                "class": "hgq>QDense",
+                "class": "QDense",
                 "inputs": "input",
                 "params": {"units": 1, "use_bias": False},
             }
@@ -593,7 +593,7 @@ def test_build_from_dnn():
                 },
             },
             "output_layer": {
-                "class": "hgq>QDense",
+                "class": "QDense",
                 "inputs": ["dnn"],
                 "params": {"units": 1},
                 "activation": "sigmoid",
@@ -639,7 +639,7 @@ def test_build_from_cnn():
                 "inputs": ["cnn"],
             },
             "output_layer": {
-                "class": "hgq>QDense",
+                "class": "QDense",
                 "inputs": ["flatten"],
                 "params": {"units": 1},
                 "activation": "sigmoid",
@@ -654,6 +654,40 @@ def test_build_from_cnn():
     save_to = OUTPUT_DIR / "test_cnn.keras"
     model.save(save_to)
     load_model(save_to)
+
+
+def test_conv2d_pooling_layers_accepts_scalar_sizes():
+    import tensorflow as tf
+    from wp21_ml_utils.sequential import Conv2DPoolingLayers
+
+    layers = Conv2DPoolingLayers(
+        filter_sizes=[8, 16],
+        kernel_sizes=3,
+        pooling_sizes=2,
+        pooling="max",
+        activation="relu",
+        use_hgq=False,
+    )
+
+    assert layers.kernel_sizes == [3, 3]
+    assert layers.pooling_sizes == [2, 2]
+    assert layers(tf.zeros((1, 32, 32, 1))).shape == (1, 6, 6, 16)
+
+
+def test_conv2d_pooling_layers_accepts_mixed_scalar_and_list_sizes():
+    from wp21_ml_utils.sequential import Conv2DPoolingLayers
+
+    layers = Conv2DPoolingLayers(
+        filter_sizes=[8, 16],
+        kernel_sizes=3,
+        pooling_sizes=[2, 1],
+        pooling="max",
+        activation="relu",
+        use_hgq=False,
+    )
+
+    assert layers.kernel_sizes == [3, 3]
+    assert layers.pooling_sizes == [2, 1]
 
 
 def test_extract_submodel():

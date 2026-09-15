@@ -100,6 +100,8 @@ def build_layer(class_name, params):
 
     if class_name in custom:
         cls = custom[class_name]
+    elif f"hgq>{class_name}" in custom:
+        cls = custom[f"hgq>{class_name}"]
     elif hasattr(tf.keras.layers, class_name):
         cls = getattr(tf.keras.layers, class_name)
     else:

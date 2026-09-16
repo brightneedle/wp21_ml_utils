@@ -1,4 +1,5 @@
-from typing import Callable, Tuple, Optional, Union, Any
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import tensorflow as tf
 from tensorflow.keras import layers, activations
@@ -42,7 +43,7 @@ class SymmetricPooling(layers.Layer):
         Odd kernel size defining the symmetry neighbourhood.
     """
 
-    def __init__(self, size: int, **kwargs):
+    def __init__(self, size: int, **kwargs: Any) -> None:
         super().__init__(**kwargs)
 
         if size % 2 != 1:
@@ -50,7 +51,7 @@ class SymmetricPooling(layers.Layer):
 
         self.size = size
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         input_channels = input_shape[-1]
 
         centre = self.size // 2
@@ -92,7 +93,7 @@ class SymmetricPooling(layers.Layer):
             padding="VALID",
         )
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config.update({"size": self.size})
         return config
@@ -133,10 +134,10 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         self,
         kernel_size: int,
         depth_multiplier: int,
-        activation: str = None,
+        activation: str | None = None,
         use_hgq: bool = False,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
 
         self.kernel_size = kernel_size
@@ -144,7 +145,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         self.activation = activation
         self.use_hgq = use_hgq
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.input_channels = int(input_shape[-1])
 
         self.pooling = SymmetricPooling(size=self.kernel_size)
@@ -169,7 +170,7 @@ class SymmetricDepthwiseConv2D(layers.Layer):
         outputs = tf.concat(pooled_inputs_by_layer, axis=-1)
         return outputs
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config.update(
             {
@@ -206,17 +207,17 @@ class EtaPhiPadding(layers.Layer):
         Number of cells added on each side.
     """
 
-    def __init__(self, pad_size, **kwargs):
+    def __init__(self, pad_size: int, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.pad_size = pad_size
 
-    def cyclic_padding_at_axis(self, x: TensorLike, axis: int = 2) -> TensorLike:
+    def cyclic_padding_at_axis(self, x: TensorLike, axis: int = 2) -> tf.Tensor:
         length = tf.shape(x)[axis]
         pad_before = tf.gather(x, tf.range(length - self.pad_size, length), axis=axis)
         pad_after = tf.gather(x, tf.range(0, self.pad_size), axis=axis)
         return tf.concat([pad_before, x, pad_after], axis=axis)
 
-    def zero_padding_at_axis(self, x: TensorLike, axis: int = 1):
+    def zero_padding_at_axis(self, x: TensorLike, axis: int = 1) -> tf.Tensor:
         rank = len(x.shape)
         paddings = [[0, 0]] * rank
         paddings[axis] = [self.pad_size, self.pad_size]
@@ -225,7 +226,7 @@ class EtaPhiPadding(layers.Layer):
     def call(self, x: TensorLike) -> tf.Tensor:
         return self.zero_padding_at_axis(self.cyclic_padding_at_axis(x))
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {**super().get_config(), "pad_size": self.pad_size}
 
 
@@ -241,7 +242,7 @@ class TowerEtaPhiLayer(layers.Layer):
         Image tensor of shape (B, E, P, C)
 
     Output:
-        Tuple[eta, phi]
+        tuple[eta, phi]
         Each of shape (B, E, P, 1)
 
     Parameters
@@ -257,13 +258,13 @@ class TowerEtaPhiLayer(layers.Layer):
         self,
         eta_edge: float = 2.5,
         phi_edge: float = np.pi,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.eta_edge = eta_edge
         self.phi_edge = phi_edge
 
-    def call(self, image: TensorLike) -> tf.Tensor:
+    def call(self, image: TensorLike) -> tuple[tf.Tensor, tf.Tensor]:
         B, E, P, _ = tf.unstack(tf.shape(image))
 
         eta_idxs = tf.tile(tf.reshape(tf.range(E), (1, E, 1, 1)), (B, 1, P, 1))
@@ -282,7 +283,7 @@ class TowerEtaPhiLayer(layers.Layer):
 
         return eta, phi
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "eta_edge": self.eta_edge,
@@ -321,9 +322,9 @@ class SlidingConeSum(layers.Layer):
         self,
         kernel_size: int = 9,
         shape: str = "circle",
-        radius: int | None = None,
-        **kwargs,
-    ):
+        radius: int | float | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
 
         self.kernel_size = int(kernel_size)
@@ -336,7 +337,7 @@ class SlidingConeSum(layers.Layer):
     def call(self, image: TensorLike) -> tf.Tensor:
         return tf.nn.conv2d(self.pad(image), self.kernel, strides=1, padding="VALID")
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "kernel_size": self.kernel_size,
@@ -365,7 +366,7 @@ class SlidingConeSum(layers.Layer):
         else:
             raise ValueError("Shape must be 'square' or 'circle'")
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         if len(input_shape) != 4:
             raise ValueError(f"Expected 4D input (B, H, W, C), got {input_shape}")
 
@@ -397,7 +398,7 @@ class CircularMaxPool(tf.keras.layers.Layer):
         Diameter of the circular pooling region.
     """
 
-    def __init__(self, kernel_size: int, **kwargs):
+    def __init__(self, kernel_size: int, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.kernel_size = kernel_size
 
@@ -460,7 +461,9 @@ class LocalMaxMask(layers.Layer):
         Neighbourhood geometry.
     """
 
-    def __init__(self, kernel_size: int = 9, shape: str = "square", **kwargs):
+    def __init__(
+        self, kernel_size: int = 9, shape: str = "square", **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.kernel_size = kernel_size
         self.shape = shape
@@ -481,7 +484,7 @@ class LocalMaxMask(layers.Layer):
         else:
             raise ValueError(f"shape must be 'square' or 'circle', got '{shape}'")
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         if len(input_shape) != 4:
             raise ValueError(f"Expected 4D input (B, H, W, C), got shape {input_shape}")
 
@@ -503,7 +506,7 @@ class LocalMaxMask(layers.Layer):
         pooled = self.pool(self.pad(image_w_eps))
         return tf.equal(image_w_eps, pooled)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "kernel_size": self.kernel_size,
@@ -531,7 +534,7 @@ class NthLeadingPt(layers.Layer):
         Zero-based rank after sorting in descending pT order.
     """
 
-    def __init__(self, index: int, **kwargs):
+    def __init__(self, index: int, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.index = index
 
@@ -540,7 +543,7 @@ class NthLeadingPt(layers.Layer):
         sorted_pt = tf.sort(pt, axis=-1, direction="DESCENDING")
         return sorted_pt[:, self.index, None]
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "index": self.index,
@@ -573,7 +576,9 @@ class VectorSum(layers.Layer):
         Coordinate system of the returned vector sum.
     """
 
-    def __init__(self, input: str = "polar", output: str = "polar", **kwargs):
+    def __init__(
+        self, input: str = "polar", output: str = "polar", **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.input = input
         self.output = output
@@ -606,7 +611,7 @@ class VectorSum(layers.Layer):
 
         return tf.concat([sum_components], axis=1)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "input": self.input,
@@ -723,13 +728,13 @@ class MonoDense(layers.Dense):
     def __init__(
         self,
         units: int,
-        activation: Optional[Union[str, Callable]] = None,
-        monotonicity_indicator: Union[int, list] = 0,
+        activation: str | Callable[[tf.Tensor], tf.Tensor] | None = None,
+        monotonicity_indicator: int | Sequence[int] = 0,
         is_convex: bool = False,
         is_concave: bool = False,
-        activation_weights: Tuple[float, float, float] = (7.0, 7.0, 2.0),
+        activation_weights: tuple[float, float, float] = (7.0, 7.0, 2.0),
         **kwargs: Any,
-    ):
+    ) -> None:
         super().__init__(units=units, activation=None, **kwargs)
 
         if hasattr(monotonicity_indicator, "__len__"):
@@ -760,7 +765,7 @@ class MonoDense(layers.Dense):
         self._s_concave = None
         self._s_saturated = None
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         super().build(input_shape)
 
         if isinstance(self.monotonicity_indicator, float):
@@ -773,12 +778,12 @@ class MonoDense(layers.Dense):
         # Activations
         self.convex_activation = activations.get(self.org_activation)
 
-        def concave(x):
+        def concave(x: tf.Tensor) -> tf.Tensor:
             return -self.convex_activation(-x)
 
         self.concave_activation = concave
 
-        def saturated(x):
+        def saturated(x: tf.Tensor) -> tf.Tensor:
             c = 1.0
             cc = self.convex_activation(tf.ones_like(x) * c)
             return tf.where(
@@ -836,7 +841,7 @@ class MonoDense(layers.Dense):
 
         return outputs
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config.update(
             {

@@ -3,9 +3,16 @@ import yaml
 import inspect
 from contextlib import ExitStack
 import copy
+from collections.abc import Mapping
+from os import PathLike
+from typing import Any
 
 
-def update_custom_objects(custom_objects: dict = {}) -> None:
+Config = dict[str, Any]
+Path = str | PathLike[str]
+
+
+def update_custom_objects(custom_objects: dict[str, Any] | None = None) -> None:
     """
     Register custom classes from the wp21_ml_utils modules with Keras.
 
@@ -21,6 +28,9 @@ def update_custom_objects(custom_objects: dict = {}) -> None:
     All classes defined in the configured wp21_ml_utils modules are added to
     Keras' global custom object registry.
     """
+    if custom_objects is None:
+        custom_objects = {}
+
     from wp21_ml_utils import (
         calibration,
         clustering,
@@ -52,7 +62,7 @@ def update_custom_objects(custom_objects: dict = {}) -> None:
     tf.keras.utils.get_custom_objects().update(custom_objects)
 
 
-def load_config(path) -> dict:
+def load_config(path: Path) -> Config:
     """
     Load a YAML configuration file.
 
@@ -66,10 +76,11 @@ def load_config(path) -> dict:
     dict
         Configuration loaded from the YAML file.
     """
-    return yaml.safe_load(open(path))
+    with open(path) as config_file:
+        return yaml.safe_load(config_file)
 
 
-def build_layer(class_name, params):
+def build_layer(class_name: str, params: Mapping[str, Any]) -> Any:
     """
     Construct a Keras layer from its class name and parameters.
 
@@ -111,13 +122,16 @@ def build_layer(class_name, params):
         signature = inspect.signature(cls.__init__)
         if "name" not in signature.parameters:
             raise TypeError(
-                f"Callable classes should expect 'name' argument, '{class_name}' does not."
+                "Callable classes should expect a 'name' argument; "
+                f"'{class_name}' does not."
             )
 
     return cls(**params)
 
 
-def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
+def build_from_config(
+    config: Config,
+) -> tuple[tf.keras.Model, dict[str, Any], dict[str, Any]]:
     """
     Build a Keras model from a configuration dictionary.
 
@@ -224,7 +238,7 @@ def build_from_config(config: dict) -> tuple[tf.keras.Model, dict, dict]:
     return model, layers_dict, tensor_dict
 
 
-def compile_from_config(model: tf.keras.Model, config: dict):
+def compile_from_config(model: tf.keras.Model, config: Config) -> None:
     """
     Compile a Keras model using optimizer, loss, metric, and loss-weight
     settings from a configuration dictionary.
@@ -299,7 +313,7 @@ def compile_from_config(model: tf.keras.Model, config: dict):
     )
 
 
-def load_model(path: str, compile: bool = True) -> tf.keras.Model:
+def load_model(path: Path, compile: bool = True) -> tf.keras.Model:
     """
     Load a Keras model from disk with custom objects registered.
 
@@ -417,7 +431,9 @@ def extract_submodel(
     )
 
 
-def update_config(config: dict, updates: dict, inplace: bool = False) -> dict:
+def update_config(
+    config: Config, updates: Mapping[str, Any], inplace: bool = False
+) -> Config:
     """Update a model configuration.
 
     Parameters

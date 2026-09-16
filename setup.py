@@ -9,6 +9,7 @@ setup(
     author_email="noah.clarkehall@cern.ch",
     license="GNU Lesser General Public License v3 (LGPLv3)",
     packages=["wp21_ml_utils"],
+    python_requires=">=3.10",
     install_requires=["pyyaml", "tensorflow>=2.16", "HGQ2==0.1.8"],
     extras_require={
         "dev": ["pytest", "matplotlib", "pre-commit", "scipy", "twine"],

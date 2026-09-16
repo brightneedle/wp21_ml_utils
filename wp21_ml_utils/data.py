@@ -29,7 +29,7 @@ class BaseDataset:
 
         return train_ds, valid_ds
 
-    def prepare_datasets(self):
+    def prepare_datasets(self) -> tuple[tf.data.Dataset, tf.data.Dataset]:
         """Construct the training and validation datasets.
 
         Subclasses must override this method.

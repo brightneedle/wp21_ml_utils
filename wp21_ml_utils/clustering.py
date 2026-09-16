@@ -1,6 +1,9 @@
+from typing import Any
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.utils import register_keras_serializable
+from tensorflow.types.experimental import TensorLike
 
 from wp21_ml_utils.layers import SlidingConeSum, LocalMaxMask
 from wp21_ml_utils.converters import ImageToVectors
@@ -71,9 +74,9 @@ class ConeJet(Layer):
         min_pt: float = 0,
         max_jets: int = 20,
         shape: str = "circle",
-        radius: float = None,
-        **kwargs,
-    ):
+        radius: int | float | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
 
         self.kernel_size = kernel_size
@@ -82,7 +85,7 @@ class ConeJet(Layer):
         self.shape = shape
         self.radius = radius
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.cone_sum = SlidingConeSum(
             kernel_size=self.kernel_size,
             shape=self.shape,
@@ -103,7 +106,7 @@ class ConeJet(Layer):
 
         super().build(input_shape)
 
-    def call(self, image):
+    def call(self, image: TensorLike) -> tf.Tensor:
         sum_image = tf.reduce_sum(image, axis=-1, keepdims=True)
         cone_sums = self.cone_sum(sum_image)
 

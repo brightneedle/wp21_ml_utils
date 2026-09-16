@@ -633,6 +633,7 @@ def test_build_from_cnn():
                     "activation": "relu",
                     "use_hgq": True,
                     "l2_penalty": 1e-4,
+                    "stride_sizes": [3, 2],
                 },
             },
             "flatten": {
@@ -674,6 +675,7 @@ def test_conv2d_pooling_layers_accepts_scalar_sizes():
 
     assert layers.kernel_sizes == [3, 3]
     assert layers.pooling_sizes == [2, 2]
+    assert layers.stride_sizes == [1, 1]
     assert layers(tf.zeros((1, 32, 32, 1))).shape == (1, 6, 6, 16)
 
 
@@ -684,6 +686,7 @@ def test_conv2d_pooling_layers_accepts_mixed_scalar_and_list_sizes():
         filter_sizes=[8, 16],
         kernel_sizes=3,
         pooling_sizes=[2, 1],
+        stride_sizes=[3, 2],
         pooling="max",
         activation="relu",
         use_hgq=False,
@@ -691,6 +694,23 @@ def test_conv2d_pooling_layers_accepts_mixed_scalar_and_list_sizes():
 
     assert layers.kernel_sizes == [3, 3]
     assert layers.pooling_sizes == [2, 1]
+    assert layers.stride_sizes == [3, 2]
+
+
+def test_conv2d_pooling_layers_rejects_mismatched_stride_sizes():
+    import pytest
+    from wp21_ml_utils.sequential import Conv2DPoolingLayers
+
+    with pytest.raises(ValueError, match="stride_sizes"):
+        Conv2DPoolingLayers(
+            filter_sizes=[8, 16],
+            kernel_sizes=3,
+            pooling_sizes=2,
+            stride_sizes=[1],
+            pooling="none",
+            activation="relu",
+            use_hgq=False,
+        )
 
 
 def test_extract_submodel():

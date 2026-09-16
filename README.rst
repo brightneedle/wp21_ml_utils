@@ -39,6 +39,7 @@ For development and testing, please clone and install locally via:
 Dependencies
 ------------
 
+- ``python>=3.10``
 - ``tensorflow>=2.16``
 - ``HGQ2==0.1.8``
 - ``pyyaml``
@@ -154,6 +155,7 @@ Example configuration:
          filter_sizes: [4, 6, 8]
          kernel_sizes: 3
          pooling_sizes: 2
+         stride_sizes: [1, 1, 2]
          activation: relu
          pooling: max
          use_hgq: true

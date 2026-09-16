@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Any
 
 import tensorflow as tf
 from tensorflow.keras.losses import Loss
@@ -252,8 +252,8 @@ class ChamferLoss(Loss):
         normalise_by_truth: bool = False,
         normalise_by_multiplicity: bool = False,
         include_pred_to_true: bool = True,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.squared = squared
         self.pt_weight = float(pt_weight)
@@ -274,7 +274,7 @@ class ChamferLoss(Loss):
         )
         return loss
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         base_config = super().get_config()
         config = {
             "squared": self.squared,
@@ -320,11 +320,11 @@ class SparsityLoss(Loss):
         self,
         fmax: float,
         k: int = 1,
-        axis: Union[int, tuple[int]] = (1, 2, 3),
+        axis: int | tuple[int, ...] = (1, 2, 3),
         T: float = 50,
         sum_over_last_axis: bool = False,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.fmax = float(fmax)
         self.k = int(k)
@@ -354,7 +354,7 @@ class SparsityLoss(Loss):
 
         return mean_penalty
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "fmax": self.fmax,
@@ -394,8 +394,8 @@ class CalibrationLoss(Loss):
         max_dR: float = 0.3,
         squared: bool = True,
         normalise: bool = False,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.max_dR = float(max_dR)
         self.squared = squared
@@ -433,7 +433,7 @@ class CalibrationLoss(Loss):
         loss = loss / norm
         return tf.reduce_mean(loss)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "max_dR": self.max_dR,
@@ -465,7 +465,7 @@ class PinballLoss(Loss):
             0.84 -> upper one-sigma equivalent
     """
 
-    def __init__(self, target_quantile: float, **kwargs):
+    def __init__(self, target_quantile: float, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.target_quantile = float(target_quantile)
         if self.target_quantile <= 0 or self.target_quantile >= 1:
@@ -478,5 +478,5 @@ class PinballLoss(Loss):
         loss = tf.maximum(self.target_quantile * err, (self.target_quantile - 1) * err)
         return tf.reduce_mean(loss, axis=-1)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {**super().get_config(), "target_quantile": self.target_quantile}

@@ -1,7 +1,11 @@
+from collections.abc import Sequence
+from typing import Any
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, Dense, Concatenate
 from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.keras.initializers import RandomNormal
+from tensorflow.types.experimental import TensorLike
 
 from wp21_ml_utils.layers import MonoDense
 from wp21_ml_utils.utils import unpack_momenta
@@ -72,12 +76,12 @@ class CalibrationMLP(Layer):
 
     def __init__(
         self,
-        hidden_layer_sizes=(64, 64),
-        hidden_activation="softplus",
-        eps=1e-3,
-        monotonic=True,
-        **kwargs,
-    ):
+        hidden_layer_sizes: Sequence[int] = (64, 64),
+        hidden_activation: str = "softplus",
+        eps: float = 1e-3,
+        monotonic: bool = True,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
 
         self.hidden_layer_sizes = hidden_layer_sizes
@@ -87,10 +91,10 @@ class CalibrationMLP(Layer):
 
     def _get_layer(
         self,
-        nodes,
-        activation=None,
-        monotonicity_indicator=None,
-    ):
+        nodes: int,
+        activation: str | None = None,
+        monotonicity_indicator: Sequence[int] | None = None,
+    ) -> Layer:
         if self.monotonic:
             kwargs = dict(
                 activation=activation,
@@ -107,7 +111,7 @@ class CalibrationMLP(Layer):
                 activation=activation,
             )
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.hidden_layers = []
 
         for i, hls in enumerate(self.hidden_layer_sizes):
@@ -132,7 +136,7 @@ class CalibrationMLP(Layer):
 
         super().build(input_shape)
 
-    def call(self, momenta):
+    def call(self, momenta: TensorLike) -> tf.Tensor:
         pt, eta, phi = unpack_momenta(momenta)
 
         x = self.concat([pt, tf.math.abs(eta)])

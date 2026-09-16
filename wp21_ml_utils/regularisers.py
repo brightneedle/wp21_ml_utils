@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Any
 
 import tensorflow as tf
 from tensorflow.keras.regularizers import Regularizer
@@ -31,8 +31,8 @@ class PushMaxWeightToUnity(Regularizer):
     """
 
     def __init__(
-        self, strength: float, axis: Union[int, tuple[int]] = (1, 2, 3), **kwargs
-    ):
+        self, strength: float, axis: int | tuple[int, ...] = (1, 2, 3), **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.strength = float(strength)
         self.axis = axis
@@ -41,7 +41,7 @@ class PushMaxWeightToUnity(Regularizer):
         penalty = tf.math.abs(tf.reduce_max(weight, axis=self.axis) - 1.0)
         return self.strength * tf.reduce_mean(penalty)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {"strength": self.strength, "axis": self.axis}
 
 
@@ -89,10 +89,10 @@ class SparsityPenalty(Regularizer):
         strength: float,
         max_active_fraction: float = 0,
         k: int = 1,
-        axis: Union[int, tuple[int]] = (1, 2, 3),
+        axis: int | tuple[int, ...] = (1, 2, 3),
         T: float = 50.0,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.strength = float(strength)
         self.max_active_fraction = float(max_active_fraction)
@@ -109,7 +109,7 @@ class SparsityPenalty(Regularizer):
         mean_penalty = tf.reduce_mean(penalty**self.k)
         return self.strength * mean_penalty
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             "max_active_fraction": self.max_active_fraction,
             "strength": self.strength,

@@ -1,9 +1,15 @@
+from pathlib import Path
+
 from setuptools import setup
+
+HERE = Path(__file__).parent
 
 setup(
     name="wp21_ml_utils",
-    version="0.1.0",
+    version="0.1.1",
     description="Custom TensorFlow/HGQ2 layers and models for the Global Trigger",
+    long_description=(HERE / "README.rst").read_text(encoding="utf-8"),
+    long_description_content_type="text/x-rst",
     url="https://github.com/brightneedle/wp21_ml_utils.git",
     author="Noah Clarke Hall",
     author_email="noah.clarkehall@cern.ch",

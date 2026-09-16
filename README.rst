@@ -93,9 +93,7 @@ Subclass ``BaseDataset`` to return batched training and validation datasets:
            with np.load(self.path) as data:
                x, y = data["X"], data["y"]
            split = int(0.8 * len(x))
-           make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices(
-               (x, y)
-           ).batch(32)
+           make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices((x, y))
            return make_ds(x[:split], y[:split]), make_ds(x[split:], y[split:])
 
    train_ds, valid_ds = NpzDataset("my_data.npz")()
@@ -117,7 +115,7 @@ Subclass ``BaseObjective`` to add a scalar score to the epoch logs under its
            y_pred = self.model.predict(self.x_valid, verbose=0)
            return tf.reduce_mean(tf.square(self.y_valid - y_pred))
 
-   model.fit(train_ds, callbacks=[ValidationMSE(x_valid, y_valid)])
+   model.fit(X, y, callbacks=[ValidationMSE(x_valid, y_valid)])
 
 Config-driven model building
 ----------------------------
@@ -155,7 +153,6 @@ Example configuration:
          filter_sizes: [4, 6, 8]
          kernel_sizes: 3
          pooling_sizes: 2
-         stride_sizes: [1, 1, 2]
          activation: relu
          pooling: max
          use_hgq: true
@@ -200,7 +197,7 @@ Example configuration:
          f0: 6
      layer:
        enable_ebops: true
-       beta0: 1.0e-9
+       beta0: 1.0e-6
 
    random_state: 42
 

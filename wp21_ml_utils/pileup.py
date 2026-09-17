@@ -1,3 +1,6 @@
+from collections.abc import Sequence
+from typing import Any
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, MaxPooling2D, AveragePooling2D, Concatenate
 from tensorflow.keras.utils import register_keras_serializable
@@ -40,11 +43,11 @@ class TowerSoftKiller(Layer):
         Size of the η–φ patches used to determine the SoftKiller threshold.
     """
 
-    def __init__(self, patch_size=(5, 8), **kwargs):
+    def __init__(self, patch_size: tuple[int, int] = (5, 8), **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.patch_size = patch_size
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.max_pooling_layer = MaxPooling2D(
             pool_size=self.patch_size, padding="valid"
         )
@@ -56,7 +59,7 @@ class TowerSoftKiller(Layer):
         sk_towers = tf.where(image > median_max, image, 0)
         return sk_towers
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "patch_size": self.patch_size,
@@ -102,12 +105,17 @@ class TowerSoftKillerWithAreaCorrection(Layer):
         space.
     """
 
-    def __init__(self, patch_size=(5, 8), pixel_area=0.1 * np.pi / 32, **kwargs):
+    def __init__(
+        self,
+        patch_size: tuple[int, int] = (5, 8),
+        pixel_area: float = 0.1 * np.pi / 32,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.patch_size = patch_size
         self.pixel_area = pixel_area
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.pixels_per_patch = tf.cast(
             self.patch_size[0] * self.patch_size[1], dtype=tf.float32
         )
@@ -130,7 +138,7 @@ class TowerSoftKillerWithAreaCorrection(Layer):
         sk_towers = tf.where(image_rho_sub > median_max, image_rho_sub, 0)
         return sk_towers
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "patch_size": self.patch_size,
@@ -201,13 +209,13 @@ class PileupCNN(Layer):
         self,
         size: int = 3,
         depth_multiplier: int = 4,
-        hidden_layer_sizes: list[int] = [32, 32],
+        hidden_layer_sizes: Sequence[int] = (32, 32),
         use_hgq: bool = False,
         init_as_layer_sum: bool = True,
         with_abseta: bool = True,
-        weight_regulariser: Regularizer = None,
-        **kwargs,
-    ):
+        weight_regulariser: Regularizer | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
 
         self.size = size
@@ -218,7 +226,7 @@ class PileupCNN(Layer):
         self.with_abseta = with_abseta
         self.weight_regulariser = weight_regulariser
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         channels = input_shape[-1]
 
         self.padding = EtaPhiPadding(self.size // 2)
@@ -256,7 +264,7 @@ class PileupCNN(Layer):
 
         super().build(input_shape)
 
-    def call(self, inputs):
+    def call(self, inputs: TensorLike) -> tf.Tensor:
         x = self.padding(inputs)
         x = self.depthwise_conv(x)
 
@@ -272,7 +280,7 @@ class PileupCNN(Layer):
 
         return w * inputs
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config.update(
             {

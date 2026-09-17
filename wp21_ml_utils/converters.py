@@ -1,3 +1,6 @@
+from collections.abc import Sequence
+from typing import Any
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.utils import register_keras_serializable
@@ -53,19 +56,19 @@ class ImageToVectors(Layer):
 
     def __init__(
         self,
-        max_vectors: int = None,
+        max_vectors: int | None = None,
         min_pt: float = 0,
         eta_edge: float = 2.5,
         phi_edge: float = np.pi,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.max_vectors = max_vectors
         self.min_pt = min_pt
         self.eta_edge = eta_edge
         self.phi_edge = phi_edge
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.get_coords = TowerEtaPhiLayer(
             eta_edge=self.eta_edge,
             phi_edge=self.phi_edge,
@@ -97,7 +100,7 @@ class ImageToVectors(Layer):
 
         return tf.where(seed_mask, vectors, 0)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "max_vectors": self.max_vectors,
@@ -152,15 +155,15 @@ class VectorsToImage(Layer):
         self,
         eta_edges: TensorLike = np.linspace(-2.5, 2.5, 51),
         phi_edges: TensorLike = np.linspace(-np.pi, np.pi, 65),
-        filter_layers: list[int] = None,
+        filter_layers: Sequence[int] | None = None,
         return_layers: bool = False,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.eta_edges = tf.cast(tf.convert_to_tensor(eta_edges), tf.float32)
         self.phi_edges = tf.cast(tf.convert_to_tensor(phi_edges), tf.float32)
         self.return_layers = return_layers
-        self.filter_layers = filter_layers
+        self.filter_layers = list(filter_layers) if filter_layers is not None else None
 
     def call(self, vectors: TensorLike) -> tf.Tensor:
         has_layer_input = vectors.shape[-1] is not None and vectors.shape[-1] >= 4
@@ -267,7 +270,7 @@ class VectorsToImage(Layer):
 
         return towers
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "eta_edges": self.eta_edges.numpy().tolist(),

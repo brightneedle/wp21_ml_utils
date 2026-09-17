@@ -1,3 +1,6 @@
+from collections.abc import Sequence
+
+import tensorflow as tf
 from tensorflow.keras.layers import (
     Dense,
     BatchNormalization,
@@ -8,6 +11,7 @@ from tensorflow.keras.layers import (
     AveragePooling2D,
 )
 from tensorflow.keras.regularizers import L1L2, L1, L2
+from tensorflow.types.experimental import TensorLike
 from hgq.layers import QDense, QBatchNormDense, QConv2D
 
 
@@ -23,7 +27,7 @@ class DenseLayers:
 
     Parameters
     ----------
-    hidden_layer_sizes : list[int]
+    hidden_layer_sizes : sequence[int]
         Number of units in each hidden layer. An empty list produces an
         identity sequential network.
     activation : str
@@ -48,15 +52,15 @@ class DenseLayers:
 
     def __init__(
         self,
-        hidden_layer_sizes: list[int],
+        hidden_layer_sizes: Sequence[int],
         activation: str,
         use_hgq: bool,
         dropout: float = 0.0,
         batch_norm: bool = False,
         l2_penalty: float = 0.0,
         l1_penalty: float = 0.0,
-        name: str = None,
-    ):
+        name: str | None = None,
+    ) -> None:
         self.hidden_layer_sizes = list(hidden_layer_sizes)
         self.activation = activation
         self.dropout = dropout
@@ -120,7 +124,7 @@ class DenseLayers:
             for layer in self.layer_list:
                 layer.name = f"{name}_{layer.name}"
 
-    def __call__(self, inputs):
+    def __call__(self, inputs: TensorLike) -> tf.Tensor:
         x = inputs
         for layer in self.layer_list:
             x = layer(x)
@@ -131,27 +135,29 @@ class Conv2DPoolingLayers:
     """
     Configurable stack of two-dimensional convolution and pooling layers.
 
-    Builds a convolutional network from ``filter_sizes``, ``kernel_sizes``,
-    and ``pooling_sizes``. Standard Keras ``Conv2D`` layers are used by
-    default; when ``use_hgq`` is enabled, the corresponding HGQ ``QConv2D``
-    layers are used instead. A max- or average-pooling layer is added after
-    each convolution when its matching pooling size is greater than one, and
-    dropout is applied after each block when requested.
+    ``filter_sizes`` determines the number of convolutional blocks. Kernel and
+    pooling sizes may be supplied either as a single value shared by every
+    block or as one value per block. Standard Keras ``Conv2D`` layers are used
+    by default; when ``use_hgq`` is enabled, HGQ ``QConv2D`` layers are used
+    instead. A max- or average-pooling layer is added after each convolution
+    whose pooling size is greater than one. Dropout is applied after each
+    block when requested.
 
     Parameters
     ----------
-    filter_sizes : list[int]
+    filter_sizes : sequence[int]
         Number of filters in each convolutional layer.
-    kernel_sizes : list[int]
-        Kernel size for each convolutional layer. Must have the same length
-        as ``filter_sizes``.
-    pooling_sizes : list[int]
-        Pooling size after each convolutional layer. A value of one disables
-        pooling for that layer. Must have the same length as ``filter_sizes``.
+    kernel_sizes : int or sequence[int]
+        Kernel size for each convolutional layer. An integer is applied to every
+        layer; a sequence must have the same length as ``filter_sizes``.
+    pooling_sizes : int or sequence[int]
+        Pooling size after each convolutional layer. An integer is applied to
+        every layer, and a value of one disables pooling. A sequence must have
+        the same length as ``filter_sizes``.
     activation : str
         Activation applied to each convolutional layer.
     pooling : str
-        Pooling operation to use: ``max`` or ``average``.
+        Pooling operation to use: ``max``, ``average`` or ``none``.
     use_hgq : bool
         Whether to use HGQ quantised convolutional layers.
     padding : str, default="valid"
@@ -165,15 +171,25 @@ class Conv2DPoolingLayers:
     l1_penalty : float, default=0.0
         L1 regularisation penalty applied to the kernel of each
         convolutional layer. Set to zero to disable L1 regularisation.
+    stride_sizes : int or sequence[int], default=1
+        Convolution stride for each layer. An integer is applied to every
+        layer; a sequence must have the same length as ``filter_sizes``.
     name : str or None, default=None
         Optional prefix added to the generated layer names.
+
+    Raises
+    ------
+    ValueError
+        If sequence-valued kernel, pooling, or stride sizes do not match the
+        number of filters, or if an unsupported pooling operation is requested
+        for an enabled pooling layer.
     """
 
     def __init__(
         self,
-        filter_sizes: list[int],
-        kernel_sizes: list[int],
-        pooling_sizes: list[int],
+        filter_sizes: Sequence[int],
+        kernel_sizes: int | Sequence[int],
+        pooling_sizes: int | Sequence[int],
         activation: str,
         pooling: str,
         use_hgq: bool,
@@ -181,11 +197,25 @@ class Conv2DPoolingLayers:
         dropout: float = 0.0,
         l2_penalty: float = 0.0,
         l1_penalty: float = 0.0,
-        name=None,
-    ):
+        stride_sizes: int | Sequence[int] = 1,
+        name: str | None = None,
+    ) -> None:
         self.filter_sizes = list(filter_sizes)
-        self.kernel_sizes = list(kernel_sizes)
-        self.pooling_sizes = list(pooling_sizes)
+        self.kernel_sizes = (
+            [kernel_sizes] * len(self.filter_sizes)
+            if isinstance(kernel_sizes, int)
+            else list(kernel_sizes)
+        )
+        self.pooling_sizes = (
+            [pooling_sizes] * len(self.filter_sizes)
+            if isinstance(pooling_sizes, int)
+            else list(pooling_sizes)
+        )
+        self.stride_sizes = (
+            [stride_sizes] * len(self.filter_sizes)
+            if isinstance(stride_sizes, int)
+            else list(stride_sizes)
+        )
         self.pooling = pooling
         self.padding = padding
         self.activation = activation
@@ -204,15 +234,19 @@ class Conv2DPoolingLayers:
             self.regularizer = None
 
         if not (
-            len(self.filter_sizes) == len(self.kernel_sizes) == len(self.pooling_sizes)
+            len(self.filter_sizes)
+            == len(self.kernel_sizes)
+            == len(self.pooling_sizes)
+            == len(self.stride_sizes)
         ):
             raise ValueError(
-                "filter_sizes, kernel_sizes, and pooling_sizes must have the same length."
+                "filter_sizes, kernel_sizes, pooling_sizes, and stride_sizes "
+                "must have the same length."
             )
 
         self.layer_list = []
-        for filters, kernel_size, pool_size in zip(
-            self.filter_sizes, self.kernel_sizes, self.pooling_sizes
+        for filters, kernel_size, pool_size, strides in zip(
+            self.filter_sizes, self.kernel_sizes, self.pooling_sizes, self.stride_sizes
         ):
             if self.use_hgq:
                 self.layer_list.append(
@@ -222,6 +256,7 @@ class Conv2DPoolingLayers:
                         padding=self.padding,
                         activation=self.activation,
                         kernel_regularizer=self.regularizer,
+                        strides=strides,
                     )
                 )
             else:
@@ -232,6 +267,7 @@ class Conv2DPoolingLayers:
                         padding=self.padding,
                         activation=self.activation,
                         kernel_regularizer=self.regularizer,
+                        strides=strides,
                     )
                 )
 
@@ -240,9 +276,12 @@ class Conv2DPoolingLayers:
                     self.layer_list.append(MaxPooling2D(pool_size=pool_size))
                 elif self.pooling == "average":
                     self.layer_list.append(AveragePooling2D(pool_size=pool_size))
+                elif self.pooling == "none":
+                    pass
                 else:
                     raise ValueError(
-                        f"Invalid pooling type: {self.pooling}. Must be 'max' or 'average'."
+                        f"Invalid pooling type: {self.pooling}. "
+                        "Must be 'max', 'average' or 'none'."
                     )
 
             if self.dropout > 0:
@@ -252,7 +291,7 @@ class Conv2DPoolingLayers:
             for layer in self.layer_list:
                 layer.name = f"{name}_{layer.name}"
 
-    def __call__(self, inputs):
+    def __call__(self, inputs: TensorLike) -> tf.Tensor:
         x = inputs
         for layer in self.layer_list:
             x = layer(x)

@@ -1,3 +1,5 @@
+from typing import Any
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.initializers import Constant
@@ -34,14 +36,14 @@ class BaseQuantiser(Layer):
         during training. Larger values approach hard quantisation.
     """
 
-    def __init__(self, T: float, **kwargs):
+    def __init__(self, T: float, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.T = float(T)
 
     def _compute_bin_edges(self) -> tf.Tensor:
         raise NotImplementedError()
 
-    def call(self, x: TensorLike, training: bool = False) -> tf.Tensor:
+    def call(self, x: TensorLike, training: bool | None = False) -> tf.Tensor:
         x_shape = tf.shape(x)
         x_flat = tf.reshape(x, [-1])
 
@@ -63,7 +65,7 @@ class BaseQuantiser(Layer):
 
         return tf.reshape(y_flat, x_shape)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {**super().get_config(), "T": self.T}
 
 
@@ -113,8 +115,8 @@ class QuadLinearQuantiser(BaseQuantiser):
         G: float = 4.0,
         trainable: bool = False,
         T: float = 50,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(T=T, **kwargs)
         self.bits = int(bits)
         self.lsb_init = float(lsb)
@@ -123,7 +125,7 @@ class QuadLinearQuantiser(BaseQuantiser):
 
         self.steps_per_range = int(2 ** (self.bits - 2))
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.lsb = self.add_weight(
             shape=[1],
             initializer=Constant(self.lsb_init),
@@ -138,7 +140,7 @@ class QuadLinearQuantiser(BaseQuantiser):
         )
         super().build(input_shape)
 
-    def _compute_bin_edges(self):
+    def _compute_bin_edges(self) -> tf.Tensor:
         n = self.steps_per_range
 
         zero = tf.zeros([n], dtype=self.lsb.dtype)
@@ -152,7 +154,7 @@ class QuadLinearQuantiser(BaseQuantiser):
 
         return self.lsb * tf.cumsum(bin_widths)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "bits": self.bits,
@@ -212,15 +214,15 @@ class FlexibleQuantiser(BaseQuantiser):
     def __init__(
         self,
         bits: int,
-        min_range: float = None,
-        max_range: float = None,
+        min_range: float | None = None,
+        max_range: float | None = None,
         T: float = 50,
         train_min_range: bool = False,
         train_max_range: bool = False,
         train_widths: bool = False,
         bin_smoothing: float = 1e-3,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(T=T, **kwargs)
         if min_range is None:
             min_range = -(2 ** (bits / 2))
@@ -237,7 +239,7 @@ class FlexibleQuantiser(BaseQuantiser):
 
         self.num_bins = 2**self.bits - 1
 
-    def build(self, input_shape):
+    def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.lower = self.add_weight(
             shape=[1],
             initializer=Constant(self.min_range),
@@ -258,7 +260,7 @@ class FlexibleQuantiser(BaseQuantiser):
         )
         super().build(input_shape)
 
-    def _compute_bin_edges(self):
+    def _compute_bin_edges(self) -> tf.Tensor:
         range_scale = scaled_softplus(self.range_scale)
         bin_widths = tf.nn.softmax(self.bin_widths)
 
@@ -270,7 +272,7 @@ class FlexibleQuantiser(BaseQuantiser):
         bin_edges = self.lower + (self.max_range - self.min_range) * range_scale * edges
         return bin_edges
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         return {
             **super().get_config(),
             "bits": self.bits,
@@ -286,7 +288,12 @@ class FlexibleQuantiser(BaseQuantiser):
 
 @register_keras_serializable("wp21_ml_utils")
 class EncodeCellEt(Layer):
-    def __init__(self, encoder_layer: str, encoder_config: dict = None, **kwargs):
+    def __init__(
+        self,
+        encoder_layer: str,
+        encoder_config: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.encoder_layer = encoder_layer
         self.encoder_config = encoder_config or {}
@@ -294,13 +301,13 @@ class EncodeCellEt(Layer):
             {"class_name": encoder_layer, "config": encoder_config}
         )
 
-    def call(self, x):
+    def call(self, x: TensorLike) -> tf.Tensor:
         components = unpack_momenta(x)
         et = components[0]
         encoded_et = self.encoder(et)
         return tf.concat([encoded_et, *components[1:]], axis=-1)
 
-    def get_config(self):
+    def get_config(self) -> dict[str, Any]:
         config = super().get_config()
         config.update(
             {"encoder_layer": self.encoder_layer, "encoder_config": self.encoder_config}

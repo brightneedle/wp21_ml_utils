@@ -1,8 +1,7 @@
 WP2.1 Machine Learning Utilities 🔧
 ===================================
 
-A compact TensorFlow/Keras utility package for HGQ-based ML studies on the
-Global Trigger.
+A compact TensorFlow/Keras utility package for HGQ-based ML studies.
 
 The package provides serialisable Keras layers, callable network blocks,
 losses, regularisers, and configuration helpers for building detector-inspired
@@ -16,8 +15,7 @@ Features
   particle calibration, and common dense/convolutional architectures.
 - Support for image-style event inputs, ``B x eta x phi x layer``, and
   object-vector inputs, ``B x num_vectors x (pt, eta, phi, ...)``.
-- YAML-driven model construction and compilation via
-  ``wp21_ml_utils.model``.
+- YAML-driven model construction and compilation via ``wp21_ml_utils.model``.
 - Base classes for constructing paired training/validation datasets and
   recording custom scalar objectives during Keras training.
 - Keras serialisation support for the package's custom layers, losses, and
@@ -26,7 +24,7 @@ Features
 Installation
 ------------
 
-The package is available via ``pypi``:
+The package is available via PyPI:
 
 .. code-block:: bash
 
@@ -41,6 +39,7 @@ For development and testing, please clone and install locally via:
 Dependencies
 ------------
 
+- ``python>=3.10``
 - ``tensorflow>=2.16``
 - ``HGQ2==0.1.8``
 - ``pyyaml``
@@ -92,14 +91,12 @@ Subclass ``BaseDataset`` to return batched training and validation datasets:
 
        def prepare_datasets(self):
            with np.load(self.path) as data:
-               x, y = data["cells"], data["pt_1"]
+               x, y = data["X"], data["y"]
            split = int(0.8 * len(x))
-           make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices(
-               (x, y)
-           ).batch(32)
+           make_ds = lambda x, y: tf.data.Dataset.from_tensor_slices((x, y))
            return make_ds(x[:split], y[:split]), make_ds(x[split:], y[split:])
 
-   train_ds, valid_ds = NpzDataset("train_data.npz")()
+   train_ds, valid_ds = NpzDataset("my_data.npz")()
 
 Subclass ``BaseObjective`` to add a scalar score to the epoch logs under its
 ``name``:
@@ -118,7 +115,7 @@ Subclass ``BaseObjective`` to add a scalar score to the epoch logs under its
            y_pred = self.model.predict(self.x_valid, verbose=0)
            return tf.reduce_mean(tf.square(self.y_valid - y_pred))
 
-   model.fit(train_ds, callbacks=[ValidationMSE(x_valid, y_valid)])
+   model.fit(X, y, callbacks=[ValidationMSE(x_valid, y_valid)])
 
 Config-driven model building
 ----------------------------
@@ -128,84 +125,79 @@ Model graphs can be described in YAML. The top-level sections are:
 - ``inputs``: named Keras inputs with their tensor shapes.
 - ``layers``: ordered computation nodes. Each node has a ``class``, one or
   more ``inputs``, and optional ``params`` passed to the constructor. The
-  ``class`` may be either a Keras ``Layer`` or a callable class that builds a
-  reusable computation block. Note that HGQ2 layer classes must be prefixed
-  with ``hgq>``.
+  ``class`` may be a Keras ``Layer`` (including an HGQ2 layer) or a callable
+  class that builds a reusable computation block.
 - ``outputs``: named tensors to expose as model outputs, with optional loss,
   metrics, and loss-weight settings used by ``compile_from_config``.
-- ``optimiser``: a Keras optimiser name plus constructor parameters.
+- ``optimiser``: optional Keras optimiser name plus constructor parameters.
+  Defaults to ``adam``.
 - ``hgq_config``: optional HGQ2 quantizer and layer scopes applied by
-  ``build_from_config`` while constructing the model.
-- ``random_state``: TensorFlow seed used during model construction.
+  ``build_from_config`` while constructing the model. If not provided, no HGQ2
+  scopes are applied.
+- ``random_state``: optional random seed used during model construction.
+  Defaults to 42.
 
 Example configuration:
 
 .. code-block:: yaml
 
    inputs:
-     cells:
-       shape: [null, 4]  # var x (pt eta phi layer)
+     features:
+       shape: [50, 64, 6]
 
    layers:
-     encode_cells:
-       class: EncodeCellEt
-       inputs: [cells]
+     conv_block:
+       class: Conv2DPoolingLayers
+       inputs: [features]
        params:
-         encoder_layer: QuadLinearQuantiser
-         encoder_config:
-           trainable: true
+         filter_sizes: [4, 6, 8]
+         kernel_sizes: 3
+         pooling_sizes: 2
+         activation: relu
+         pooling: max
+         use_hgq: true
 
-     towers:
-       class: VectorsToImage
-       inputs: [encode_cells]
+     flatten:
+       class: Flatten
+       inputs: [conv_block]
+
+     logits:
+       class: QDense
+       inputs: [flatten]
        params:
-         return_layers: true
-         filter_layers: [0, 1, 2, 3, 4, 5]
-
-     pileup:
-       class: PileupCNN
-       inputs: [towers]
-
-     jets:
-       class: ConeJet
-       inputs: [pileup]
-
-     calib:
-       class: CalibrationMLP
-       inputs: [jets]
-
-     pt_1:
-       class: NthLeadingPt
-       inputs: [calib]
-       params:
-         index: 0
-
-     pt_4:
-       class: NthLeadingPt
-       inputs: [calib]
-       params:
-         index: 3
+         units: 1
 
    outputs:
-     pt_1:
-       loss: mse
-       metrics:
-         - mae
-     pt_4:
-       loss: MeanAbsoluteError
-       loss_weight: 0.5
-       metrics:
-         - mse
-     calib:
-       loss: CalibrationLoss
+     logits:
+       loss: BinaryCrossentropy
        params:
-        sqaured: false
+         from_logits: true
+       metrics:
+         - accuracy
 
    optimiser:
      class: adam
      params:
        learning_rate: 0.001
        clipnorm: 1.
+
+   hgq_config:
+     quantizer_scopes:
+       - place: all
+         default_q_type: kbi
+         overflow_mode: SAT_SYM
+         heterogeneous_axis: []
+       - q_type: kbi
+         place: [weight, bias]
+         b0: 8
+         i0: 2
+       - place: datalane
+         default_q_type: kif
+         overflow_mode: WRAP
+         f0: 6
+     layer:
+       enable_ebops: true
+       beta0: 1.0e-6
 
    random_state: 42
 
@@ -218,7 +210,6 @@ Build and compile the model from the configuration as follows:
        load_config,
        build_from_config,
        compile_from_config,
-       load_model,
    )
 
    config = load_config("model_config.yaml")
@@ -245,7 +236,7 @@ HGQ2 configuration
 ~~~~~~~~~~~~~~~~~~
 
 ``build_from_config`` can create the HGQ2 configuration scopes needed for
-quantization-aware training. Add an optional ``hgq_config`` mapping containing:
+quantisation-aware training. Add an optional ``hgq_config`` mapping containing:
 
 - ``quantizer_scopes``: a list of keyword-argument mappings passed to
   ``hgq.config.QuantizerConfigScope``. Scopes are entered in list order, so a
@@ -254,31 +245,9 @@ quantization-aware training. Add an optional ``hgq_config`` mapping containing:
   ``hgq.config.LayerConfigScope``.
 
 Both kinds of scope remain active while every configured layer is constructed.
-If ``hgq_config`` is absent, the builder creates no HGQ2 scope.
-
-For example, this configuration sets general quantizer defaults, overrides
-the weight and bias precision, configures datalane quantization, and enables
-EBOPs on HGQ2 layers:
-
-.. code-block:: yaml
-
-   hgq_config:
-     quantizer_scopes:
-       - place: all
-         default_q_type: kbi
-         overflow_mode: SAT_SYM
-         heterogeneous_axis: []
-       - q_type: kbi
-         place: [weight, bias]
-         b0: 8
-         i0: 2
-       - place: datalane
-         default_q_type: kif
-         overflow_mode: WRAP
-         f0: 6
-     layer:
-       enable_ebops: true
-       beta0: 1.0e-9
+The complete example above sets general quantiser defaults, overrides the
+weight and bias precision, configures datalane quantisation, and enables EBOPs
+on HGQ2 layers. If ``hgq_config`` is absent, the builder creates no HGQ2 scope.
 
 Extending the package with custom layers
 ----------------------------------------
@@ -304,4 +273,4 @@ callable class.
 License
 -------
 
-BSD 2-clause
+GNU Lesser General Public License v3 (LGPLv3)

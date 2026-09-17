@@ -1,3 +1,5 @@
+from typing import Any
+
 from tensorflow.keras.callbacks import Callback
 
 
@@ -13,7 +15,7 @@ class BaseObjective(Callback):
         Key under which the objective value is stored in the Keras logs.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         """Initialise the objective callback.
 
         Parameters
@@ -42,7 +44,7 @@ class BaseObjective(Callback):
         """
         raise NotImplementedError("please overload the `scoring_function` method.")
 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
         """Compute the objective and add it to the epoch logs.
 
         Parameters

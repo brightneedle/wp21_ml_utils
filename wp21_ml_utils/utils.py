@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Any
 
 import tensorflow as tf
 from tensorflow.keras import ops
@@ -112,7 +112,7 @@ def transpose(x: tf.Tensor) -> tf.Tensor:
     return ops.transpose(x, (0, 2, 1))
 
 
-def get_layer_dict(model: tf.keras.Model) -> dict:
+def get_layer_dict(model: tf.keras.Model) -> dict[str, tf.keras.layers.Layer]:
     """
     Creates a lookup dictionary of model layers.
 
@@ -238,8 +238,8 @@ def augment_image(image: tf.Tensor) -> tf.Tensor:
 
 
 def init_dense_layer(
-    units: int, use_hgq: bool = False, *args, **kwargs
-) -> Union[Dense, QDense]:
+    units: int, use_hgq: bool = False, *args: Any, **kwargs: Any
+) -> Dense | QDense:
     """
     Factory function for dense-layer creation.
 

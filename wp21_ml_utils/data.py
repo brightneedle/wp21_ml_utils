@@ -19,9 +19,17 @@ class BaseDataset:
             dataset.
         """
         train_ds, valid_ds = self.prepare_datasets()
+
+        if not isinstance(train_ds, tf.data.Dataset) or not isinstance(
+            valid_ds, tf.data.Dataset
+        ):
+            raise ValueError(
+                "`prepare_datasets` must return a pair of `tf.data.Dataset`."
+            )
+
         return train_ds, valid_ds
 
-    def prepare_datasets(self):
+    def prepare_datasets(self) -> tuple[tf.data.Dataset, tf.data.Dataset]:
         """Construct the training and validation datasets.
 
         Subclasses must override this method.

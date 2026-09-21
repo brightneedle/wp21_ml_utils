@@ -262,6 +262,24 @@ class PileupCNN(Layer):
             use_hgq=self.use_hgq,
         )
 
+        padded_shape = (
+            input_shape[0],
+            (None if input_shape[1] is None else input_shape[1] + 2 * (self.size // 2)),
+            (None if input_shape[2] is None else input_shape[2] + 2 * (self.size // 2)),
+            channels,
+        )
+        self.depthwise_conv.build(padded_shape)
+        feature_shape = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            channels * self.depth_multiplier + int(self.with_abseta),
+        )
+        for layer in self.hidden_layers:
+            layer.build(feature_shape)
+            feature_shape = (*feature_shape[:-1], layer.units)
+        self.weight_head.build(feature_shape)
+
         super().build(input_shape)
 
     def call(self, inputs: TensorLike) -> tf.Tensor:

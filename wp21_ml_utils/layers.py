@@ -158,6 +158,16 @@ class SymmetricDepthwiseConv2D(layers.Layer):
             )
             for _ in range(self.input_channels)
         ]
+
+        self.pooling.build(input_shape)
+        pooled_shape = (
+            input_shape[0],
+            None if input_shape[1] is None else input_shape[1] - self.kernel_size + 1,
+            None if input_shape[2] is None else input_shape[2] - self.kernel_size + 1,
+            (self.kernel_size // 2 + 1) ** 2,
+        )
+        for dense_layer in self.dense_layers:
+            dense_layer.build(pooled_shape)
         super().build(input_shape)
 
     def call(self, image: TensorLike) -> tf.Tensor:

@@ -6,7 +6,7 @@ HERE = Path(__file__).parent
 
 setup(
     name="wp21_ml_utils",
-    version="0.1.1",
+    version="0.1.2",
     description="Custom TensorFlow/HGQ2 layers and models for the Global Trigger",
     long_description=(HERE / "README.rst").read_text(encoding="utf-8"),
     long_description_content_type="text/x-rst",

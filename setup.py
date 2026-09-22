@@ -13,7 +13,8 @@ setup(
     url="https://github.com/brightneedle/wp21_ml_utils.git",
     author="Noah Clarke Hall",
     author_email="noah.clarkehall@cern.ch",
-    license="GNU Lesser General Public License v3 (LGPLv3)",
+    license="LGPL-3.0-only",
+    license_files=["LICENSE"],
     packages=["wp21_ml_utils"],
     python_requires=">=3.10",
     install_requires=["pyyaml", "tensorflow>=2.16", "HGQ2>=0.1.8"],
@@ -23,7 +24,6 @@ setup(
     classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.10",

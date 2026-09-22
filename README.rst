@@ -41,7 +41,7 @@ Dependencies
 
 - ``python>=3.10``
 - ``tensorflow>=2.16``
-- ``HGQ2==0.1.8``
+- ``HGQ2>=0.1.8``
 - ``pyyaml``
 
 Core modules

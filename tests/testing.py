@@ -224,6 +224,51 @@ def test_pileup_cnn_uses_hgq_regular_conv():
     assert isinstance(layer.conv.kernel_constraint, ReflectionSymmetry)
 
 
+def test_hls4ml_compiles_qconv2d_with_symmetric_kernel_constraint(tmp_path):
+    import hls4ml
+    import numpy as np
+    import tensorflow as tf
+    from hgq.layers import QConv2D
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+
+    inputs = tf.keras.Input(shape=(5, 5, 2))
+    conv = QConv2D(
+        filters=2,
+        kernel_size=3,
+        kernel_constraint=ReflectionSymmetry(),
+        name="symmetric_qconv2d",
+    )
+    model = tf.keras.Model(inputs=inputs, outputs=conv(inputs))
+
+    # Keras constraints are normally applied after an optimizer update. Apply
+    # it explicitly so the weights converted by hls4ml are symmetric as well.
+    conv.kernel.assign(conv.kernel_constraint(conv.kernel))
+    kernel = conv.kernel.numpy()
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=0), atol=1e-7)
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=1), atol=1e-7)
+
+    hls_config = hls4ml.utils.config_from_keras_model(
+        model,
+        granularity="name",
+    )
+    hls_model = hls4ml.converters.convert_from_keras_model(
+        model,
+        output_dir=str(tmp_path / "hls4ml_symmetric_qconv2d"),
+        project_name="symmetric_qconv2d",
+        backend="Vivado",
+        io_type="io_parallel",
+        hls_config=hls_config,
+    )
+    hls_model.compile()
+
+    test_inputs = np.random.default_rng(42).normal(size=(2, 5, 5, 2)).astype(np.float32)
+    keras_output = model(test_inputs, training=False).numpy()
+    hls_output = hls_model.predict(test_inputs).reshape(keras_output.shape)
+
+    assert hls_output.shape == keras_output.shape
+    np.testing.assert_allclose(hls_output, keras_output, atol=1e-5, rtol=1e-5)
+
+
 def test_pileup_cnn_native_and_hgq_serialization(tmp_path):
     import numpy as np
     import tensorflow as tf

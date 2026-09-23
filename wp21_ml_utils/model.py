@@ -34,6 +34,7 @@ def update_custom_objects(custom_objects: dict[str, Any] | None = None) -> None:
     from wp21_ml_utils import (
         calibration,
         clustering,
+        constraints,
         converters,
         layers,
         losses,
@@ -46,6 +47,7 @@ def update_custom_objects(custom_objects: dict[str, Any] | None = None) -> None:
     for module in [
         calibration,
         clustering,
+        constraints,
         converters,
         layers,
         losses,

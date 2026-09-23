@@ -1,20 +1,25 @@
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Layer, MaxPooling2D, AveragePooling2D, Concatenate
+from tensorflow.keras.layers import (
+    Layer,
+    MaxPooling2D,
+    AveragePooling2D,
+    Concatenate,
+    Conv2D,
+    DepthwiseConv2D,
+)
 from tensorflow.keras.utils import register_keras_serializable
 from tensorflow.keras.regularizers import Regularizer
 from tensorflow.keras.initializers import Constant
 from tensorflow.types.experimental import TensorLike
-import numpy as np
+from hgq.layers import QConv2D
 
 from wp21_ml_utils.utils import take_median, init_dense_layer
-from wp21_ml_utils.layers import (
-    TowerEtaPhiLayer,
-    EtaPhiPadding,
-    SymmetricDepthwiseConv2D,
-)
+from wp21_ml_utils.layers import TowerEtaPhiLayer, EtaPhiPadding
+from wp21_ml_utils.constraints import ReflectionSymmetry
 
 
 @register_keras_serializable("wp21_ml_utils")
@@ -151,10 +156,12 @@ class PileupCNN(Layer):
     """
     Learnable pileup-suppression layer based on local calorimeter topology.
 
-    Applies a depthwise convolution over a local η–φ neighbourhood to extract
-    tower-level features, optionally augments these with the tower pseudorapidity,
-    and predicts a multiplicative weight for each input tower. The output is
-    obtained by scaling the original tower energies with the predicted weights:
+    Applies a convolution over a local η–φ neighbourhood to extract tower-level
+    features, optionally augments them with the tower pseudorapidity, and
+    predicts a multiplicative weight for each input tower. The convolution can
+    be either depthwise or regular, and its kernel can be constrained to be
+    symmetric under independent η and φ reflections. The output is obtained by
+    scaling the original tower energies with the predicted weights:
 
         E_T^out = w · E_T^in
 
@@ -166,7 +173,7 @@ class PileupCNN(Layer):
     The architecture consists of:
 
     1. η–φ-aware padding.
-    2. Symmetric depthwise convolution for local feature extraction.
+    2. Depthwise or regular convolution for local feature extraction.
     3. Optional inclusion of log(|η|).
     4. A stack of dense hidden layers.
     5. A per-channel weight-prediction head.
@@ -180,19 +187,29 @@ class PileupCNN(Layer):
 
     Parameters
     ----------
-    size : int, default=3
+    filters : int, default=4
+        For a depthwise convolution, the number of filters produced per input
+        channel. For a regular convolution, the total number of output filters.
+
+    kernel_size : int, default=3
         Size of the local convolutional neighbourhood.
 
-    depth_multiplier : int, default=4
-        Number of depthwise convolution filters produced per input channel.
+    depthwise : bool, default=True
+        Whether to use a depthwise convolution. If False, use a regular
+        convolution instead.
 
-    hidden_layer_sizes : list[int], default=[32, 32]
+    symmetric_conv : bool, default=True
+        Whether to constrain the convolution kernel to be reflection
+        symmetric in the spatial axes.
+
+    hidden_layer_sizes : sequence[int], default=(32, 32)
         Widths of the fully connected hidden layers used to predict tower
         weights.
 
     use_hgq : bool, default=False
-        Whether to use HGQ-compatible layers and quantisation-aware
-        implementations.
+        Whether to use HGQ-compatible convolution and dense layers. HGQ is
+        only supported when ``depthwise=False`` because HGQ2 does not provide
+        a quantized depthwise convolution.
 
     init_as_layer_sum : bool, default=True
         Initialise the output weight head such that the layer initially
@@ -203,40 +220,71 @@ class PileupCNN(Layer):
 
     weight_regulariser : keras.regularizers.Regularizer, optional
         Regulariser applied to the predicted tower weights.
+
+    Raises
+    ------
+    ValueError
+        If ``kernel_size`` is even. Symmetric padding with a valid convolution
+        preserves the input image dimensions only for odd kernel sizes.
+    NotImplementedError
+        If both ``depthwise`` and ``use_hgq`` are True.
     """
 
     def __init__(
         self,
-        size: int = 3,
-        depth_multiplier: int = 4,
+        filters: int = 4,
+        kernel_size: int = 3,
         hidden_layer_sizes: Sequence[int] = (32, 32),
         use_hgq: bool = False,
         init_as_layer_sum: bool = True,
         with_abseta: bool = True,
         weight_regulariser: Regularizer | None = None,
+        symmetric_conv: bool = True,
+        depthwise: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
 
-        self.size = size
-        self.depth_multiplier = depth_multiplier
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel_size must be an odd integer")
+
+        self.kernel_size = kernel_size
+        self.filters = filters
         self.hidden_layer_sizes = hidden_layer_sizes
         self.use_hgq = use_hgq
         self.init_as_layer_sum = init_as_layer_sum
         self.with_abseta = with_abseta
         self.weight_regulariser = weight_regulariser
+        self.symmetric_conv = symmetric_conv
+        self.depthwise = depthwise
 
     def build(self, input_shape: tuple[int | None, ...]) -> None:
         channels = input_shape[-1]
 
-        self.padding = EtaPhiPadding(self.size // 2)
+        self.padding = EtaPhiPadding(self.kernel_size // 2)
 
-        self.depthwise_conv = SymmetricDepthwiseConv2D(
-            kernel_size=self.size,
-            depth_multiplier=self.depth_multiplier,
-            use_hgq=self.use_hgq,
-            activation="relu",
-        )
+        symmetry_constraint = ReflectionSymmetry() if self.symmetric_conv else None
+        if self.depthwise:
+            if not self.use_hgq:
+                self.conv = DepthwiseConv2D(
+                    kernel_size=self.kernel_size,
+                    depth_multiplier=self.filters,
+                    activation="relu",
+                    depthwise_constraint=symmetry_constraint,
+                )
+            else:
+                raise NotImplementedError(
+                    "HGQ2 does not provide a quantized depthwise convolution; "
+                    "set use_hgq=False or depthwise=False."
+                )
+        else:
+            conv_cls = QConv2D if self.use_hgq else Conv2D
+            self.conv = conv_cls(
+                filters=self.filters,
+                kernel_size=self.kernel_size,
+                activation="relu",
+                kernel_constraint=symmetry_constraint,
+            )
 
         if self.with_abseta:
             self.eta_phi = TowerEtaPhiLayer()
@@ -264,16 +312,28 @@ class PileupCNN(Layer):
 
         padded_shape = (
             input_shape[0],
-            (None if input_shape[1] is None else input_shape[1] + 2 * (self.size // 2)),
-            (None if input_shape[2] is None else input_shape[2] + 2 * (self.size // 2)),
+            (
+                None
+                if input_shape[1] is None
+                else input_shape[1] + 2 * (self.kernel_size // 2)
+            ),
+            (
+                None
+                if input_shape[2] is None
+                else input_shape[2] + 2 * (self.kernel_size // 2)
+            ),
             channels,
         )
-        self.depthwise_conv.build(padded_shape)
+        self.conv.build(padded_shape)
+        if symmetry_constraint is not None:
+            self.conv.kernel.assign(symmetry_constraint(self.conv.kernel))
+
+        conv_features = channels * self.filters if self.depthwise else self.filters
         feature_shape = (
             input_shape[0],
             input_shape[1],
             input_shape[2],
-            channels * self.depth_multiplier + int(self.with_abseta),
+            conv_features + int(self.with_abseta),
         )
         for layer in self.hidden_layers:
             layer.build(feature_shape)
@@ -284,7 +344,7 @@ class PileupCNN(Layer):
 
     def call(self, inputs: TensorLike) -> tf.Tensor:
         x = self.padding(inputs)
-        x = self.depthwise_conv(x)
+        x = self.conv(x)
 
         if self.with_abseta:
             eta, _ = self.eta_phi(inputs)
@@ -302,13 +362,15 @@ class PileupCNN(Layer):
         config = super().get_config()
         config.update(
             {
-                "size": self.size,
-                "depth_multiplier": self.depth_multiplier,
+                "filters": self.filters,
+                "kernel_size": self.kernel_size,
                 "hidden_layer_sizes": self.hidden_layer_sizes,
                 "weight_regulariser": self.weight_regulariser,
                 "init_as_layer_sum": self.init_as_layer_sum,
                 "use_hgq": self.use_hgq,
                 "with_abseta": self.with_abseta,
+                "symmetric_conv": self.symmetric_conv,
+                "depthwise": self.depthwise,
             }
         )
         return config

@@ -55,6 +55,8 @@ Core modules
   eta-phi images via ``VectorsToImage`` and ``ImageToVectors``.
 - ``pileup.py``: pileup-suppression layers including ``TowerSoftKiller`` and
   ``PileupCNN``.
+- ``constraints.py``: serialisable Keras weight constraints, including
+  ``ReflectionSymmetry`` for eta-phi convolution kernels.
 - ``clustering.py``: cone-based jet reconstruction with ``ConeJet``.
 - ``calibration.py``: transverse-momentum calibration with
   ``CalibrationMLP``.

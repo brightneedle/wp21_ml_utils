@@ -24,6 +24,303 @@ def test_imports():
         importlib.import_module(module_name)
 
 
+def test_symmetric_constraint():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+
+    kernel = ReflectionSymmetry()(tf.random.normal((3, 3, 2, 4))).numpy()
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=0), atol=1e-7)
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=1), atol=1e-7)
+
+
+def test_legacy_symmetric_pooling():
+    import numpy as np
+    import pytest
+    import tensorflow as tf
+    from wp21_ml_utils.layers import SymmetricPooling
+
+    inputs = tf.reshape(tf.range(2 * 5 * 6, dtype=tf.float32), (1, 5, 6, 2))
+    layer = SymmetricPooling(size=3)
+
+    output = layer(inputs).numpy()
+    eta_reflected = layer(tf.reverse(inputs, axis=[1])).numpy()
+    phi_reflected = layer(tf.reverse(inputs, axis=[2])).numpy()
+
+    assert output.shape == (1, 3, 4, 8)
+    np.testing.assert_allclose(output, np.flip(eta_reflected, axis=1))
+    np.testing.assert_allclose(output, np.flip(phi_reflected, axis=2))
+    assert not layer.kernel.trainable
+
+    with pytest.raises(ValueError, match="size must be odd integer"):
+        SymmetricPooling(size=2)
+
+
+def test_legacy_symmetric_depthwise_conv_round_trip(tmp_path):
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.layers import SymmetricDepthwiseConv2D
+    from wp21_ml_utils.model import load_model
+
+    inputs = tf.random.normal((2, 7, 8, 3), seed=42)
+    for use_hgq in (False, True):
+        model = tf.keras.Sequential(
+            [
+                SymmetricDepthwiseConv2D(
+                    kernel_size=3,
+                    depth_multiplier=2,
+                    activation="relu",
+                    use_hgq=use_hgq,
+                )
+            ]
+        )
+
+        expected = model(inputs).numpy()
+        assert expected.shape == (2, 5, 6, 6)
+        assert len(model.layers[0].dense_layers) == 3
+
+        save_to = tmp_path / f"legacy_symmetric_depthwise_{use_hgq}.keras"
+        model.save(save_to)
+        restored = load_model(save_to, compile=False)
+
+        np.testing.assert_allclose(restored(inputs).numpy(), expected, atol=1e-6)
+
+
+def test_reflection_symmetry_constraint_survives_optimizer_update():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+
+    model = tf.keras.Sequential(
+        [
+            tf.keras.layers.DepthwiseConv2D(
+                kernel_size=3,
+                depth_multiplier=1,
+                depthwise_constraint=ReflectionSymmetry(),
+            )
+        ]
+    )
+    model.compile(optimizer="adam", loss="mse")
+    model.train_on_batch(
+        np.random.default_rng(42).normal(size=(2, 5, 5, 2)),
+        np.zeros((2, 3, 3, 2)),
+    )
+
+    kernel = model.layers[0].kernel.numpy()
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=0), atol=1e-7)
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=1), atol=1e-7)
+
+
+def test_reflection_symmetry_constraint_on_regular_conv_optimizer_update():
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+
+    model = tf.keras.Sequential(
+        [
+            tf.keras.layers.Conv2D(
+                filters=2,
+                kernel_size=3,
+                kernel_constraint=ReflectionSymmetry(),
+            )
+        ]
+    )
+    model.compile(optimizer="adam", loss="mse")
+    model.train_on_batch(
+        np.random.default_rng(42).normal(size=(2, 5, 5, 3)),
+        np.zeros((2, 3, 3, 2)),
+    )
+
+    kernel = model.layers[0].kernel.numpy()
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=0), atol=1e-7)
+    np.testing.assert_allclose(kernel, np.flip(kernel, axis=1), atol=1e-7)
+
+
+def test_pileup_cnn_depthwise_option():
+    import numpy as np
+    import pytest
+    import tensorflow as tf
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+    from wp21_ml_utils.pileup import PileupCNN
+
+    depthwise = PileupCNN(
+        filters=2,
+        hidden_layer_sizes=(),
+        with_abseta=False,
+        depthwise=True,
+    )
+    regular = PileupCNN(
+        filters=2,
+        hidden_layer_sizes=(),
+        with_abseta=False,
+        depthwise=False,
+    )
+
+    inputs = tf.ones((1, 8, 9, 3))
+    assert depthwise(inputs).shape == inputs.shape
+    assert regular(inputs).shape == inputs.shape
+    assert isinstance(depthwise.conv, tf.keras.layers.DepthwiseConv2D)
+    assert isinstance(regular.conv, tf.keras.layers.Conv2D)
+    assert isinstance(depthwise.conv.depthwise_constraint, ReflectionSymmetry)
+    assert isinstance(regular.conv.kernel_constraint, ReflectionSymmetry)
+    for layer in (depthwise, regular):
+        kernel = layer.conv.kernel.numpy()
+        np.testing.assert_allclose(kernel, np.flip(kernel, axis=0), atol=1e-7)
+        np.testing.assert_allclose(kernel, np.flip(kernel, axis=1), atol=1e-7)
+    assert depthwise.get_config()["depthwise"] is True
+    assert regular.get_config()["depthwise"] is False
+    assert depthwise.get_config()["filters"] == 2
+    assert regular.get_config()["kernel_size"] == 3
+
+    with pytest.raises(NotImplementedError, match="quantized depthwise convolution"):
+        PileupCNN(use_hgq=True, depthwise=True)(inputs)
+
+    with pytest.raises(ValueError, match="kernel_size must be an odd integer"):
+        PileupCNN(kernel_size=2)
+
+
+def test_pileup_cnn_without_symmetric_constraint():
+    import tensorflow as tf
+    from wp21_ml_utils.pileup import PileupCNN
+
+    inputs = tf.ones((1, 8, 9, 3))
+    depthwise = PileupCNN(
+        hidden_layer_sizes=(),
+        with_abseta=False,
+        symmetric_conv=False,
+        depthwise=True,
+    )
+    regular = PileupCNN(
+        hidden_layer_sizes=(),
+        with_abseta=False,
+        symmetric_conv=False,
+        depthwise=False,
+    )
+
+    depthwise(inputs)
+    regular(inputs)
+
+    assert depthwise.conv.depthwise_constraint is None
+    assert regular.conv.kernel_constraint is None
+
+
+def test_pileup_cnn_uses_hgq_regular_conv():
+    import tensorflow as tf
+    from hgq.layers import QConv2D
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+    from wp21_ml_utils.pileup import PileupCNN
+
+    inputs = tf.ones((1, 8, 9, 3))
+    layer = PileupCNN(
+        filters=2,
+        hidden_layer_sizes=(),
+        use_hgq=True,
+        with_abseta=False,
+        depthwise=False,
+    )
+
+    assert layer(inputs).shape == inputs.shape
+    assert isinstance(layer.conv, QConv2D)
+    assert isinstance(layer.conv.kernel_constraint, ReflectionSymmetry)
+
+
+def test_pileup_cnn_native_and_hgq_serialization(tmp_path):
+    import numpy as np
+    import tensorflow as tf
+    from wp21_ml_utils.model import load_model
+    from wp21_ml_utils.pileup import PileupCNN
+
+    inputs = tf.random.normal((2, 8, 9, 3), seed=42)
+
+    for name, params in [
+        ("native_depthwise", {"depthwise": True, "use_hgq": False}),
+        ("hgq_regular", {"depthwise": False, "use_hgq": True}),
+    ]:
+        model = tf.keras.Sequential(
+            [
+                PileupCNN(
+                    filters=2,
+                    hidden_layer_sizes=(4,),
+                    with_abseta=True,
+                    **params,
+                )
+            ]
+        )
+        expected = model(inputs).numpy()
+        save_to = tmp_path / f"pileup_cnn_{name}.keras"
+        model.save(save_to)
+        restored = load_model(save_to, compile=False)
+
+        np.testing.assert_allclose(restored(inputs).numpy(), expected, atol=1e-6)
+        assert restored.layers[0].get_config()["depthwise"] == params["depthwise"]
+
+
+def test_build_pileup_cnn_from_config():
+    import tensorflow as tf
+    from wp21_ml_utils.model import build_from_config
+    from wp21_ml_utils.pileup import PileupCNN
+
+    config = {
+        "inputs": {"input": {"shape": [8, 9, 3]}},
+        "layers": {
+            "pileup": {
+                "class": "PileupCNN",
+                "inputs": ["input"],
+                "params": {
+                    "filters": 2,
+                    "kernel_size": 3,
+                    "hidden_layer_sizes": [],
+                    "with_abseta": False,
+                    "symmetric_conv": False,
+                    "depthwise": False,
+                },
+            }
+        },
+        "outputs": {"pileup": {}},
+    }
+
+    model, layers, _ = build_from_config(config)
+
+    outputs = model({"input": tf.ones((1, 8, 9, 3))})
+    assert outputs["pileup"].shape == (1, 8, 9, 3)
+    assert isinstance(layers["pileup"], PileupCNN)
+    assert layers["pileup"].filters == 2
+    assert layers["pileup"].kernel_size == 3
+    assert layers["pileup"].depthwise is False
+    assert layers["pileup"].symmetric_conv is False
+
+
+def test_build_native_symmetric_depthwise_conv_from_config():
+    import tensorflow as tf
+    from wp21_ml_utils.constraints import ReflectionSymmetry
+    from wp21_ml_utils.model import build_from_config
+
+    config = {
+        "inputs": {"input": {"shape": [5, 5, 2]}},
+        "layers": {
+            "conv": {
+                "class": "DepthwiseConv2D",
+                "inputs": ["input"],
+                "params": {
+                    "kernel_size": 3,
+                    "depth_multiplier": 2,
+                    "depthwise_constraint": {
+                        "class_name": "ReflectionSymmetry",
+                        "config": {},
+                    },
+                },
+            }
+        },
+        "outputs": {"conv": {}},
+    }
+
+    model, layers, _ = build_from_config(config)
+    outputs = model({"input": tf.ones((1, 5, 5, 2))})
+
+    assert outputs["conv"].shape == (1, 3, 3, 4)
+    assert isinstance(layers["conv"].depthwise_constraint, ReflectionSymmetry)
+
+
 def test_base_dataset_requires_prepare_datasets():
     import pytest
     from wp21_ml_utils.data import BaseDataset
@@ -111,6 +408,7 @@ def test_pucnn():
             [
                 PileupCNN(
                     use_hgq=True,
+                    depthwise=False,
                     init_as_layer_sum=True,
                     weight_regulariser=regulariser,
                 ),

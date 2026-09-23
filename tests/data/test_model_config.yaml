@@ -21,6 +21,12 @@ layers:
   pileup:
     class: PileupCNN
     inputs: [towers]
+    params:
+      filters: 4
+      kernel_size: 3
+      depthwise: true
+      symmetric_conv: true
+      use_hgq: false
 
   jets:
     class: ConeJet

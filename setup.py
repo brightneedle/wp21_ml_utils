@@ -23,7 +23,6 @@ setup(
             "pytest",
             "matplotlib",
             "pre-commit",
-            "scipy",
             "twine",
             "hls4ml>=1.2",
         ],

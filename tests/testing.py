@@ -508,10 +508,9 @@ def test_quantisers():
 
 def test_mono_dense():
     import numpy as np
-    from tensorflow.keras import Sequential
+    from tensorflow.keras import Sequential, layers
     from wp21_ml_utils.model import load_model
     from wp21_ml_utils.layers import MonoDense
-    from scipy.stats import spearmanr
 
     x = np.random.uniform(0, 2 * np.pi, size=(10000, 1))
     y = x + 1.5 * np.sin(x)
@@ -523,13 +522,13 @@ def test_mono_dense():
             MonoDense(1, monotonicity_indicator=1),
         ]
     )
+    assert all(isinstance(layer, layers.Layer) for layer in model.layers)
     model.compile(loss="mse", optimizer="adam")
     model.fit(x, y, batch_size=32, epochs=20)
 
     y_pred = model.predict(x)
-    rank_coeff = spearmanr(x, y_pred, axis=None).statistic
-
-    np.testing.assert_allclose(rank_coeff, 1)
+    order = np.argsort(x[:, 0])
+    assert np.all(np.diff(y_pred[order, 0]) >= -1e-7)
 
     plt.figure(figsize=(4, 4))
     plt.scatter(x, y, s=0.1, label="True")

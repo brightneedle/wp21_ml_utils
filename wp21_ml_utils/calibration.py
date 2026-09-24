@@ -94,7 +94,7 @@ class CalibrationMLP(Layer):
         nodes: int,
         activation: str | None = None,
         monotonicity_indicator: Sequence[int] | None = None,
-    ) -> Layer:
+    ) -> MonoDense | Dense:
         if self.monotonic:
             kwargs = dict(
                 activation=activation,
@@ -114,16 +114,16 @@ class CalibrationMLP(Layer):
     def build(self, input_shape: tuple[int | None, ...]) -> None:
         self.hidden_layers = []
 
-        for i, hls in enumerate(self.hidden_layer_sizes):
-            if i == 0:
+        for layer_idx, units in enumerate(self.hidden_layer_sizes):
+            if layer_idx == 0:
                 layer = self._get_layer(
-                    hls,
+                    units,
                     activation=self.hidden_activation,
                     monotonicity_indicator=[1, 0],
                 )
             else:
                 layer = self._get_layer(
-                    hls,
+                    units,
                     activation=self.hidden_activation,
                 )
 
@@ -133,7 +133,6 @@ class CalibrationMLP(Layer):
         self.gate_head = self._get_layer(1)
 
         self.concat = Concatenate(axis=-1)
-
         super().build(input_shape)
 
     def call(self, momenta: TensorLike) -> tf.Tensor:
@@ -159,3 +158,12 @@ class CalibrationMLP(Layer):
         )
 
         return self.concat([gated_calib_pt, eta, phi])
+
+    def get_config(self) -> dict:
+        return {
+            **super().get_config(),
+            "hidden_layer_sizes": list(self.hidden_layer_sizes),
+            "hidden_activation": self.hidden_activation,
+            "eps": self.eps,
+            "monotonic": self.monotonic,
+        }

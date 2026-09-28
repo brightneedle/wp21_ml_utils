@@ -273,9 +273,13 @@ class Conv2DPoolingLayers:
 
             if pool_size > 1:
                 if self.pooling == "max":
-                    self.layer_list.append(MaxPooling2D(pool_size=pool_size))
+                    self.layer_list.append(
+                        MaxPooling2D(pool_size=pool_size, padding=padding)
+                    )
                 elif self.pooling == "average":
-                    self.layer_list.append(AveragePooling2D(pool_size=pool_size))
+                    self.layer_list.append(
+                        AveragePooling2D(pool_size=pool_size, padding=padding)
+                    )
                 elif self.pooling == "none":
                     pass
                 else:
